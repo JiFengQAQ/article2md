@@ -1,0 +1,6 @@
+requests>=2.28
+html2text>=2024.2
+
+# 可选：未知平台兜底 (需额外执行 `playwright install chromium`)
+# playwright>=1.40
+# readability-lxml>=0.8
