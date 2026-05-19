@@ -139,6 +139,8 @@ class HuaweiAutoAdapter(PlatformAdapter):
                     )
                     if video_cover:
                         md_parts.append(f"![视频封面]({video_cover})\n")
+                        if video_cover not in images:
+                            images.append(video_cover)
             markdown = "\n".join(md_parts)
 
         # ── 路径3: textContent only（type=0 用户帖）──
@@ -150,12 +152,29 @@ class HuaweiAutoAdapter(PlatformAdapter):
         for img in cd.get("imageContent") or []:
             if img and img not in images:
                 images.append(img)
+        # imgContentPlus（顶部 banner 大图，单 URL 字符串）
+        icp = cd.get("imgContentPlus") or ""
+        if icp and icp not in images:
+            images.append(icp)
+        # fileContent（正文配图，JSON数组）
         fc_raw = cd.get("fileContent") or ""
         if fc_raw:
             try:
                 for fc_img in json.loads(fc_raw):
                     img_url = (fc_img.get("imagePath") or "") + (
                         fc_img.get("imageName") or ""
+                    )
+                    if img_url and img_url not in images:
+                        images.append(img_url)
+            except json.JSONDecodeError:
+                pass
+        # fileContentPlus（顶部 banner 图，JSON数组）
+        fcp_raw = cd.get("fileContentPlus") or ""
+        if fcp_raw:
+            try:
+                for fcp_img in json.loads(fcp_raw):
+                    img_url = (fcp_img.get("imagePath") or "") + (
+                        fcp_img.get("imageName") or ""
                     )
                     if img_url and img_url not in images:
                         images.append(img_url)
