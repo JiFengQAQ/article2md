@@ -16,6 +16,9 @@ python extractor.py "https://omp.uopes.cn/static/webapp/share/article_details.ht
 
 # CLI 输出 JSON
 python extractor.py "https://omp.uopes.cn/static/webapp/share/article_details.html?contentId=1642222" --json
+
+# 可选：图片尺寸探测失败时保留图片（默认会删除未知尺寸图片）
+python extractor.py "https://example.com/article" --image-fail-open
 ```
 
 ### Python 调用
@@ -24,6 +27,8 @@ python extractor.py "https://omp.uopes.cn/static/webapp/share/article_details.ht
 from extractor import article_to_markdown, article_to_dict
 
 md = article_to_markdown(url)        # → str | None
+# 默认 image_fail_open=False：图片尺寸探测失败时删除该图片
+# 若要保留未知尺寸图片：article_to_markdown(url, image_fail_open=True)
 d = article_to_dict(url)             # → dict | None
 # d = {'title', 'subtitle', 'author', 'source_url', 'markdown', 'images'}
 ```
@@ -34,7 +39,7 @@ d = article_to_dict(url)             # → dict | None
 - Markdown 会保留正文图片；当正文抽取器漏掉图片时，会从原始 HTML / 渲染 DOM 中补齐未引用图片。
 - SVG 会从 `images` 数组和 Markdown 图片引用中同时剔除。
 - 非正文图会从 `images` 数组和 Markdown 图片引用中同时剔除：仅保留满足 `(宽度 ≥ 700 或 高度 ≥ 700) 且 宽度/高度 ∈ (0, 1) ∪ (1, 3]` 的图片；方图、过小图、超宽长图会被视为头像、图标、缩略图或装饰图。
-- 图片尺寸检测直接解析 JPEG / PNG / GIF / WebP 头部字节，不依赖 Pillow；网络失败或未知格式采用 fail-open，不误删可能有效的正文图。
+- 图片尺寸检测直接解析 JPEG / PNG / GIF / WebP 头部字节，不依赖 Pillow；默认采用 fail-closed：网络失败或未知格式会删除该图片；可通过 `image_fail_open=True` 或 CLI `--image-fail-open` 改为保留未知尺寸图片。
 
 ## 已知限制
 

@@ -25,7 +25,7 @@ class ImageFilteringTests(unittest.TestCase):
         self.assertIn("before", markdown)
         self.assertIn("after", markdown)
 
-    def test_content_image_shape_filter_and_fail_open(self):
+    def test_content_image_shape_filter_and_default_fail_closed(self):
         images = [
             "https://example.com/keep-landscape.png",
             "https://example.com/keep-portrait.png",
@@ -40,7 +40,7 @@ class ImageFilteringTests(unittest.TestCase):
             "https://example.com/drop-small.png": (699, 500),      # long side too short
             "https://example.com/drop-square.png": (700, 700),     # ratio=1 is excluded
             "https://example.com/drop-panorama.png": (1600, 400),  # ratio>3 is excluded
-            "https://example.com/unknown.png": None,               # fail-open
+            "https://example.com/unknown.png": None,               # default fail-closed
         }
         with patch.object(extractor, "_fetch_image_dimensions", side_effect=lambda url: dims[url]):
             markdown = extractor._strip_svg_and_non_content(
@@ -51,15 +51,27 @@ class ImageFilteringTests(unittest.TestCase):
             )
         self.assertIn("keep-landscape.png", markdown)
         self.assertIn("keep-portrait.png", markdown)
-        self.assertIn("unknown.png", markdown)
         self.assertNotIn("drop-small.png", markdown)
         self.assertNotIn("drop-square.png", markdown)
         self.assertNotIn("drop-panorama.png", markdown)
+        self.assertNotIn("unknown.png", markdown)
         self.assertEqual(images, [
             "https://example.com/keep-landscape.png",
             "https://example.com/keep-portrait.png",
-            "https://example.com/unknown.png",
         ])
+
+    def test_fail_open_keeps_unknown_dimension_images(self):
+        images = ["https://example.com/unknown.png"]
+        with patch.object(extractor, "_fetch_image_dimensions", return_value=None):
+            markdown = extractor._strip_svg_and_non_content(
+                "![](https://example.com/unknown.png)",
+                images,
+                700,
+                3,
+                fail_open=True,
+            )
+        self.assertIn("unknown.png", markdown)
+        self.assertEqual(images, ["https://example.com/unknown.png"])
 
 
 if __name__ == "__main__":

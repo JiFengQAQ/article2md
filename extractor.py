@@ -27,6 +27,7 @@ IMAGE_ASPECT_RATIO_MAX = 3.0
 IMAGE_DIMENSION_BYTE_CAP = 512 * 1024
 IMAGE_DIMENSION_WORKERS = 8
 IMAGE_DIMENSION_TIMEOUT = (3.05, 3)
+IMAGE_DIMENSION_FAIL_OPEN = False
 
 CAPTCHA_PATTERNS = (
     "百度安全验证",
@@ -353,6 +354,7 @@ def _strip_svg_and_non_content(
     min_long_side: int = 0,
     max_aspect_ratio: float = 0,
     base_url: str = "",
+    fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
 ) -> str:
     """Remove SVG and known-non-content images from image arrays and markdown refs."""
     markdown_urls = _markdown_image_urls(markdown)
@@ -380,8 +382,14 @@ def _strip_svg_and_non_content(
                     dims = future.result()
                 except Exception as e:
                     logger.debug("Image dimension worker failed for %s: %s", url, e)
+                    if not fail_open:
+                        filtered_urls.add(url)
                     continue
-                if dims and not _is_content_image_dimensions(
+                if dims is None:
+                    if not fail_open:
+                        filtered_urls.add(url)
+                    continue
+                if not _is_content_image_dimensions(
                     dims,
                     min_long_side=min_long_side,
                     max_aspect_ratio=max_aspect_ratio,
@@ -440,6 +448,9 @@ class HuaweiAutoAdapter(PlatformAdapter):
     """鸿蒙智行 / AITO 社区文章"""
 
     API = "https://omp.uopes.cn/xcar/omp/xbs/cc/queryPostShareDetail"
+
+    def __init__(self, image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN):
+        self.image_fail_open = image_fail_open
 
     def can_handle(self, url: str) -> bool:
         return "omp.uopes.cn" in url
@@ -575,6 +586,7 @@ class HuaweiAutoAdapter(PlatformAdapter):
             IMAGE_DIMENSION_MIN_LONG_SIDE,
             IMAGE_ASPECT_RATIO_MAX,
             base_url=url,
+            fail_open=self.image_fail_open,
         )
 
         # ── 视频链接 ──
@@ -625,8 +637,9 @@ class HuaweiAutoAdapter(PlatformAdapter):
 class RequestsAdapter(PlatformAdapter):
     """服务端渲染页面 → requests + trafilatura 快速提取"""
 
-    def __init__(self, timeout: int = DEFAULT_TIMEOUT):
+    def __init__(self, timeout: int = DEFAULT_TIMEOUT, image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN):
         self.timeout = timeout
+        self.image_fail_open = image_fail_open
 
     def can_handle(self, url: str) -> bool:
         return True
@@ -688,6 +701,7 @@ class RequestsAdapter(PlatformAdapter):
             IMAGE_DIMENSION_MIN_LONG_SIDE,
             IMAGE_ASPECT_RATIO_MAX,
             base_url=final_url,
+            fail_open=self.image_fail_open,
         )
         if not article.title:
             article.title = _best_title_from_html(html, fallback="")
@@ -701,9 +715,15 @@ class RequestsAdapter(PlatformAdapter):
 class PlaywrightAdapter(PlatformAdapter):
     """未知平台 → 无头浏览器渲染 + Mozilla Readability 提取"""
 
-    def __init__(self, timeout: int = DEFAULT_TIMEOUT, retries: int = DEFAULT_RETRIES):
+    def __init__(
+        self,
+        timeout: int = DEFAULT_TIMEOUT,
+        retries: int = DEFAULT_RETRIES,
+        image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
+    ):
         self.timeout = timeout
         self.retries = retries
+        self.image_fail_open = image_fail_open
 
     def can_handle(self, url: str) -> bool:
         return True  # 兜底
@@ -792,6 +812,7 @@ class PlaywrightAdapter(PlatformAdapter):
             IMAGE_DIMENSION_MIN_LONG_SIDE,
             IMAGE_ASPECT_RATIO_MAX,
             base_url=final_url,
+            fail_open=self.image_fail_open,
         )
 
         return Article(
@@ -851,15 +872,21 @@ class PlaywrightAdapter(PlatformAdapter):
 class ArticleExtractor:
     """自动选择适配器"""
 
-    def __init__(self, timeout: int = DEFAULT_TIMEOUT, retries: int = DEFAULT_RETRIES):
+    def __init__(
+        self,
+        timeout: int = DEFAULT_TIMEOUT,
+        retries: int = DEFAULT_RETRIES,
+        image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
+    ):
         self.timeout = timeout
         self.retries = retries
+        self.image_fail_open = image_fail_open
         # 平台适配器按优先级排列（越具体越靠前）
         self.adapters: list[PlatformAdapter] = [
-            HuaweiAutoAdapter(),
-            RequestsAdapter(timeout=timeout),
+            HuaweiAutoAdapter(image_fail_open=image_fail_open),
+            RequestsAdapter(timeout=timeout, image_fail_open=image_fail_open),
             # 通用兜底放最后
-            PlaywrightAdapter(timeout=timeout, retries=retries),
+            PlaywrightAdapter(timeout=timeout, retries=retries, image_fail_open=image_fail_open),
         ]
 
     def extract(self, url: str) -> Optional[Article]:
@@ -892,9 +919,14 @@ def article_to_markdown(
     url: str,
     timeout: int = DEFAULT_TIMEOUT,
     retries: int = DEFAULT_RETRIES,
+    image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
 ) -> Optional[str]:
     """一行调用：URL → Markdown 字符串"""
-    extractor = _extractor if (timeout, retries) == (DEFAULT_TIMEOUT, DEFAULT_RETRIES) else ArticleExtractor(timeout, retries)
+    extractor = (
+        _extractor
+        if (timeout, retries, image_fail_open) == (DEFAULT_TIMEOUT, DEFAULT_RETRIES, IMAGE_DIMENSION_FAIL_OPEN)
+        else ArticleExtractor(timeout, retries, image_fail_open=image_fail_open)
+    )
     article = extractor.extract(url)
     return article.markdown if article else None
 
@@ -903,9 +935,14 @@ def article_to_dict(
     url: str,
     timeout: int = DEFAULT_TIMEOUT,
     retries: int = DEFAULT_RETRIES,
+    image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
 ) -> Optional[dict]:
     """URL → 结构化字典"""
-    extractor = _extractor if (timeout, retries) == (DEFAULT_TIMEOUT, DEFAULT_RETRIES) else ArticleExtractor(timeout, retries)
+    extractor = (
+        _extractor
+        if (timeout, retries, image_fail_open) == (DEFAULT_TIMEOUT, DEFAULT_RETRIES, IMAGE_DIMENSION_FAIL_OPEN)
+        else ArticleExtractor(timeout, retries, image_fail_open=image_fail_open)
+    )
     article = extractor.extract(url)
     if not article:
         return None
@@ -926,20 +963,22 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-    if len(sys.argv) < 2:
-        print("Usage: python extractor.py <url>")
-        print("       python extractor.py <url> --json")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Extract an article URL to Markdown")
+    parser.add_argument("url")
+    parser.add_argument("--json", action="store_true", help="output structured JSON")
+    parser.add_argument(
+        "--image-fail-open",
+        action="store_true",
+        help="keep images whose dimensions cannot be fetched or parsed",
+    )
+    args = parser.parse_args()
 
-    url = sys.argv[1]
-    as_json = "--json" in sys.argv
-
-    result = article_to_dict(url)
+    result = article_to_dict(args.url, image_fail_open=args.image_fail_open)
     if not result:
         print("ERROR: Extraction failed")
         sys.exit(1)
 
-    if as_json:
+    if args.json:
         json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
     else:
         print(f"# {result['title']}")
