@@ -434,6 +434,12 @@ class RequestsAdapter(PlatformAdapter):
             markdown=_clean_markdown(markdown),
             images=_extract_images_from_html(html, final_url),
         )
+
+        # 追加 markdown 中尚未引用的图片
+        existing = set(re.findall(r'!\[.*?\]\(\s*(\S+?)\s*\)', article.markdown))
+        for img_url in article.images:
+            if img_url not in existing:
+                article.markdown += f"\n\n![]( {img_url} )"
         if not article.title:
             article.title = _best_title_from_html(html, fallback="")
         if _is_quality_article(article, min_chars=200):
@@ -526,6 +532,12 @@ class PlaywrightAdapter(PlatformAdapter):
             + _extract_images_from_html(article_html, final_url)
             + _extract_images_from_html(html, final_url)
         )
+
+        # 追加 markdown 中尚未引用的图片
+        existing = set(re.findall(r'!\[.*?\]\(\s*(\S+?)\s*\)', markdown))
+        for img_url in images:
+            if img_url not in existing:
+                markdown += f"\n\n![]( {img_url} )"
 
         return Article(
             title=title,
