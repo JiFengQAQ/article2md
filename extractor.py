@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 10
 DEFAULT_RETRIES = 2
-IMAGE_DIMENSION_MIN_W = 600
-IMAGE_DIMENSION_MIN_H = 450
+IMAGE_DIMENSION_MIN_LONG_SIDE = 700
+IMAGE_ASPECT_RATIO_MAX = 3.0
 IMAGE_DIMENSION_BYTE_CAP = 512 * 1024
 IMAGE_DIMENSION_WORKERS = 8
 IMAGE_DIMENSION_TIMEOUT = (3.05, 3)
@@ -331,8 +331,30 @@ def _strip_filtered_markdown_images(markdown: str, filtered_urls: set[str], base
     return _clean_markdown("\n".join(lines))
 
 
-def _strip_svg_and_small(markdown: str, images: list[str], min_w: int = 0, min_h: int = 0, base_url: str = "") -> str:
-    """Remove SVG and known-too-small images from image arrays and markdown refs."""
+def _is_content_image_dimensions(
+    dims: tuple[int, int],
+    min_long_side: int = IMAGE_DIMENSION_MIN_LONG_SIDE,
+    max_aspect_ratio: float = IMAGE_ASPECT_RATIO_MAX,
+) -> bool:
+    """Return True for article-like images: long enough and not square/panorama."""
+    width, height = dims
+    if width <= 0 or height <= 0:
+        return False
+    ratio = width / height
+    return (
+        (width >= min_long_side or height >= min_long_side)
+        and ((0 < ratio < 1) or (1 < ratio <= max_aspect_ratio))
+    )
+
+
+def _strip_svg_and_non_content(
+    markdown: str,
+    images: list[str],
+    min_long_side: int = 0,
+    max_aspect_ratio: float = 0,
+    base_url: str = "",
+) -> str:
+    """Remove SVG and known-non-content images from image arrays and markdown refs."""
     markdown_urls = _markdown_image_urls(markdown)
     normalized_markdown_urls = [
         _normalize_markdown_image_url(url, base_url)
@@ -344,7 +366,7 @@ def _strip_svg_and_small(markdown: str, images: list[str], min_w: int = 0, min_h
 
     probe_urls = [
         url for url in candidates
-        if min_w > 0 and min_h > 0
+        if min_long_side > 0 and max_aspect_ratio > 0
         and url not in filtered_urls
         and urlparse(url).scheme in ("http", "https")
     ]
@@ -359,7 +381,11 @@ def _strip_svg_and_small(markdown: str, images: list[str], min_w: int = 0, min_h
                 except Exception as e:
                     logger.debug("Image dimension worker failed for %s: %s", url, e)
                     continue
-                if dims and (dims[0] < min_w or dims[1] < min_h):
+                if dims and not _is_content_image_dimensions(
+                    dims,
+                    min_long_side=min_long_side,
+                    max_aspect_ratio=max_aspect_ratio,
+                ):
                     filtered_urls.add(url)
 
     images[:] = [url for url in images if url not in filtered_urls]
@@ -543,11 +569,11 @@ class HuaweiAutoAdapter(PlatformAdapter):
         for img_url in images:
             if img_url not in existing_imgs:
                 markdown += f"\n\n![]( {img_url} )"
-        markdown = _strip_svg_and_small(
+        markdown = _strip_svg_and_non_content(
             markdown,
             images,
-            IMAGE_DIMENSION_MIN_W,
-            IMAGE_DIMENSION_MIN_H,
+            IMAGE_DIMENSION_MIN_LONG_SIDE,
+            IMAGE_ASPECT_RATIO_MAX,
             base_url=url,
         )
 
@@ -656,11 +682,11 @@ class RequestsAdapter(PlatformAdapter):
         for img_url in article.images:
             if img_url not in existing:
                 article.markdown += f"\n\n![]( {img_url} )"
-        article.markdown = _strip_svg_and_small(
+        article.markdown = _strip_svg_and_non_content(
             article.markdown,
             article.images,
-            IMAGE_DIMENSION_MIN_W,
-            IMAGE_DIMENSION_MIN_H,
+            IMAGE_DIMENSION_MIN_LONG_SIDE,
+            IMAGE_ASPECT_RATIO_MAX,
             base_url=final_url,
         )
         if not article.title:
@@ -760,11 +786,11 @@ class PlaywrightAdapter(PlatformAdapter):
         for img_url in images:
             if img_url not in existing:
                 markdown += f"\n\n![]( {img_url} )"
-        markdown = _strip_svg_and_small(
+        markdown = _strip_svg_and_non_content(
             markdown,
             images,
-            IMAGE_DIMENSION_MIN_W,
-            IMAGE_DIMENSION_MIN_H,
+            IMAGE_DIMENSION_MIN_LONG_SIDE,
+            IMAGE_ASPECT_RATIO_MAX,
             base_url=final_url,
         )
 

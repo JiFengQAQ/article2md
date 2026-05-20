@@ -33,7 +33,7 @@ d = article_to_dict(url)             # → dict | None
 - 已知平台优先走 API，普通网页优先走 `requests + trafilatura`，质量不足时用 Playwright 渲染兜底。
 - Markdown 会保留正文图片；当正文抽取器漏掉图片时，会从原始 HTML / 渲染 DOM 中补齐未引用图片。
 - SVG 会从 `images` 数组和 Markdown 图片引用中同时剔除。
-- 小图会从 `images` 数组和 Markdown 图片引用中同时剔除：宽度 `<600` 或高度 `<450` 的图片视为头像、图标、缩略图等非正文图。
+- 非正文图会从 `images` 数组和 Markdown 图片引用中同时剔除：仅保留满足 `(宽度 ≥ 700 或 高度 ≥ 700) 且 宽度/高度 ∈ (0, 1) ∪ (1, 3]` 的图片；方图、过小图、超宽长图会被视为头像、图标、缩略图或装饰图。
 - 图片尺寸检测直接解析 JPEG / PNG / GIF / WebP 头部字节，不依赖 Pillow；网络失败或未知格式采用 fail-open，不误删可能有效的正文图。
 
 ## 已知限制
