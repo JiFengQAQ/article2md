@@ -8,6 +8,9 @@ import json
 import logging
 import time
 import argparse
+import struct
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Optional, Any
 from urllib.parse import urlparse, parse_qs, urljoin
@@ -19,6 +22,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 10
 DEFAULT_RETRIES = 2
+IMAGE_DIMENSION_MIN_W = 600
+IMAGE_DIMENSION_MIN_H = 450
+IMAGE_DIMENSION_BYTE_CAP = 512 * 1024
+IMAGE_DIMENSION_WORKERS = 8
+IMAGE_DIMENSION_TIMEOUT = (3.05, 3)
 
 CAPTCHA_PATTERNS = (
     "百度安全验证",
@@ -140,6 +148,15 @@ def _dedupe(items: list[str]) -> list[str]:
     return result
 
 
+def _decoded_response_text(resp: requests.Response) -> str:
+    """Decode HTML with a Chinese-friendly fallback when servers lie/omit charset."""
+    encoding = (resp.encoding or "").lower()
+    apparent = resp.apparent_encoding or ""
+    if apparent and (not encoding or encoding in {"iso-8859-1", "ascii"}):
+        resp.encoding = apparent
+    return resp.text
+
+
 def _extract_images_from_html(html: str, base_url: str) -> list[str]:
     images = []
     for match in re.finditer(r"<img\b[^>]*>", html or "", flags=re.IGNORECASE):
@@ -156,22 +173,197 @@ def _extract_images_from_html(html: str, base_url: str) -> list[str]:
     return _dedupe(images)
 
 
-def _strip_svg_and_small(markdown: str, images: list[str], min_w: int = 0, min_h: int = 0) -> str:
-    """Remove SVG images from images array and strip their markdown refs.
-    When min_w/min_h > 0, also strips inline ![](url) lines matching .svg extension.
-    Returns (possibly modified) markdown."""
-    # Strip SVG ![](url) lines from markdown (case-insensitive .svg extension)
-    markdown = re.sub(
-        r'!\[[^\]]*\]\(\s*([^)]*\.svg[^)]*)\s*\)', '', markdown, flags=re.IGNORECASE
+_IMAGE_DIMENSION_CACHE: dict[str, Optional[tuple[int, int]]] = {}
+_IMAGE_DIMENSION_CACHE_LOCK = threading.Lock()
+
+
+def _is_svg_url(url: str) -> bool:
+    parsed = urlparse(url or "")
+    path = (parsed.path or "").lower()
+    query = (parsed.query or "").lower()
+    return (
+        path.endswith(".svg")
+        or ".svg/" in path
+        or "image/svg" in query
+        or "image/svg" in path
+        or "/svg" in path
     )
-    markdown = re.sub(
-        r'!\[[^\]]*\]\(\s*([^)]*image/svg[^)]*)\s*\)', '', markdown, flags=re.IGNORECASE
-    )
-    # Remove SVGs from images array
-    images[:] = [url for url in images if not url.lower().endswith('.svg')
-                 and 'image/svg' not in url.lower()
-                 and '/svg' not in url.lower().rsplit('?', 1)[0]]
-    return markdown
+
+
+def _parse_image_dimensions(data: bytes) -> Optional[tuple[int, int]]:
+    if len(data) >= 24 and data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return struct.unpack(">II", data[16:24])
+    if len(data) >= 10 and data[:6] in (b"GIF87a", b"GIF89a"):
+        return struct.unpack("<HH", data[6:10])
+    if len(data) >= 30 and data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        chunk = data[12:16]
+        if chunk == b"VP8X" and len(data) >= 30:
+            width = 1 + int.from_bytes(data[24:27], "little")
+            height = 1 + int.from_bytes(data[27:30], "little")
+            return width, height
+        if chunk == b"VP8 " and len(data) >= 30:
+            start = data.find(b"\x9d\x01\x2a", 20)
+            if start != -1 and start + 7 <= len(data):
+                width = int.from_bytes(data[start + 3:start + 5], "little") & 0x3fff
+                height = int.from_bytes(data[start + 5:start + 7], "little") & 0x3fff
+                return width, height
+        if chunk == b"VP8L" and len(data) >= 25:
+            bits = int.from_bytes(data[21:25], "little")
+            width = (bits & 0x3fff) + 1
+            height = ((bits >> 14) & 0x3fff) + 1
+            return width, height
+    if len(data) >= 4 and data.startswith(b"\xff\xd8"):
+        i = 2
+        while i + 9 <= len(data):
+            if data[i] != 0xff:
+                i += 1
+                continue
+            while i < len(data) and data[i] == 0xff:
+                i += 1
+            if i >= len(data):
+                break
+            marker = data[i]
+            i += 1
+            if marker in (0x01,) or 0xd0 <= marker <= 0xd9:
+                continue
+            if i + 2 > len(data):
+                break
+            size = int.from_bytes(data[i:i + 2], "big")
+            if size < 2:
+                break
+            if marker in (
+                0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7,
+                0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
+            ):
+                if i + 7 <= len(data):
+                    height = int.from_bytes(data[i + 3:i + 5], "big")
+                    width = int.from_bytes(data[i + 5:i + 7], "big")
+                    return width, height
+                break
+            i += size
+    return None
+
+
+def _fetch_image_dimensions(url: str) -> Optional[tuple[int, int]]:
+    with _IMAGE_DIMENSION_CACHE_LOCK:
+        if url in _IMAGE_DIMENSION_CACHE:
+            return _IMAGE_DIMENSION_CACHE[url]
+
+    dims = None
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Range": f"bytes=0-{IMAGE_DIMENSION_BYTE_CAP - 1}",
+        }
+        with requests.get(
+            url,
+            headers=headers,
+            timeout=IMAGE_DIMENSION_TIMEOUT,
+            stream=True,
+            allow_redirects=True,
+        ) as resp:
+            resp.raise_for_status()
+            content_type = (resp.headers.get("Content-Type") or "").lower()
+            if "image/svg" in content_type:
+                dims = (0, 0)
+            else:
+                chunks = []
+                total = 0
+                for chunk in resp.iter_content(chunk_size=16384):
+                    if not chunk:
+                        continue
+                    remaining = IMAGE_DIMENSION_BYTE_CAP - total
+                    chunks.append(chunk[:remaining])
+                    total += min(len(chunk), remaining)
+                    dims = _parse_image_dimensions(b"".join(chunks))
+                    if dims or total >= IMAGE_DIMENSION_BYTE_CAP:
+                        break
+    except Exception as e:
+        logger.debug("Image dimension probe failed for %s: %s", url, e)
+        dims = None
+
+    with _IMAGE_DIMENSION_CACHE_LOCK:
+        _IMAGE_DIMENSION_CACHE[url] = dims
+    return dims
+
+
+def _markdown_image_urls(markdown: str) -> list[str]:
+    urls = []
+    for match in re.finditer(r'!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+["\'][^)]*["\'])?\s*\)', markdown or ""):
+        url = match.group(1).strip().strip("<>").strip()
+        if url:
+            urls.append(url)
+    return _dedupe(urls)
+
+
+def _normalize_markdown_image_url(url: str, base_url: str = "") -> str:
+    if base_url:
+        return _normalize_image_url(url, base_url)
+    return (url or "").strip().strip("<>").strip()
+
+
+def _strip_filtered_markdown_images(markdown: str, filtered_urls: set[str], base_url: str = "") -> str:
+    image_ref = re.compile(r'!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+["\'][^)]*["\'])?\s*\)')
+    lines = []
+    for line in (markdown or "").replace("\r\n", "\n").split("\n"):
+        matches = list(image_ref.finditer(line))
+        if not matches:
+            lines.append(line.rstrip())
+            continue
+        stripped_line = line
+        remove_entire_line = False
+        for match in reversed(matches):
+            url = match.group(1).strip().strip("<>").strip()
+            normalized_url = _normalize_markdown_image_url(url, base_url)
+            if url not in filtered_urls and normalized_url not in filtered_urls:
+                continue
+            without_ref = stripped_line[:match.start()] + stripped_line[match.end():]
+            if without_ref.strip() == "":
+                remove_entire_line = True
+            stripped_line = without_ref
+        if not remove_entire_line:
+            lines.append(stripped_line.rstrip())
+    return _clean_markdown("\n".join(lines))
+
+
+def _strip_svg_and_small(markdown: str, images: list[str], min_w: int = 0, min_h: int = 0, base_url: str = "") -> str:
+    """Remove SVG and known-too-small images from image arrays and markdown refs."""
+    markdown_urls = _markdown_image_urls(markdown)
+    normalized_markdown_urls = [
+        _normalize_markdown_image_url(url, base_url)
+        for url in markdown_urls
+    ]
+    candidates = _dedupe(images + normalized_markdown_urls)
+    filtered_urls = {url for url in candidates if _is_svg_url(url)}
+    filtered_urls.update(url for url in markdown_urls if _is_svg_url(url))
+
+    probe_urls = [
+        url for url in candidates
+        if min_w > 0 and min_h > 0
+        and url not in filtered_urls
+        and urlparse(url).scheme in ("http", "https")
+    ]
+    if probe_urls:
+        workers = min(IMAGE_DIMENSION_WORKERS, len(probe_urls))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_fetch_image_dimensions, url): url for url in probe_urls}
+            for future in as_completed(futures):
+                url = futures[future]
+                try:
+                    dims = future.result()
+                except Exception as e:
+                    logger.debug("Image dimension worker failed for %s: %s", url, e)
+                    continue
+                if dims and (dims[0] < min_w or dims[1] < min_h):
+                    filtered_urls.add(url)
+
+    images[:] = [url for url in images if url not in filtered_urls]
+    return _strip_filtered_markdown_images(markdown, filtered_urls, base_url=base_url)
 
 
 def _best_title_from_html(html: str, fallback: str = "") -> str:
@@ -351,7 +543,13 @@ class HuaweiAutoAdapter(PlatformAdapter):
         for img_url in images:
             if img_url not in existing_imgs:
                 markdown += f"\n\n![]( {img_url} )"
-        markdown = _strip_svg_and_small(markdown, images)
+        markdown = _strip_svg_and_small(
+            markdown,
+            images,
+            IMAGE_DIMENSION_MIN_W,
+            IMAGE_DIMENSION_MIN_H,
+            base_url=url,
+        )
 
         # ── 视频链接 ──
         video = cd.get("videoVo") or {}
@@ -419,8 +617,7 @@ class RequestsAdapter(PlatformAdapter):
             kwargs["timeout"] = self.timeout
             resp = requests.get(url, allow_redirects=True, **kwargs)
             resp.raise_for_status()
-            resp.encoding = resp.encoding or resp.apparent_encoding
-            html = resp.text
+            html = _decoded_response_text(resp)
         except Exception as e:
             logger.info("Requests fallback failed: %s", e)
             return None
@@ -459,7 +656,13 @@ class RequestsAdapter(PlatformAdapter):
         for img_url in article.images:
             if img_url not in existing:
                 article.markdown += f"\n\n![]( {img_url} )"
-        article.markdown = _strip_svg_and_small(article.markdown, article.images)
+        article.markdown = _strip_svg_and_small(
+            article.markdown,
+            article.images,
+            IMAGE_DIMENSION_MIN_W,
+            IMAGE_DIMENSION_MIN_H,
+            base_url=final_url,
+        )
         if not article.title:
             article.title = _best_title_from_html(html, fallback="")
         if _is_quality_article(article, min_chars=200):
@@ -552,13 +755,18 @@ class PlaywrightAdapter(PlatformAdapter):
             + _extract_images_from_html(article_html, final_url)
             + _extract_images_from_html(html, final_url)
         )
-        markdown = _strip_svg_and_small(markdown, images)
-
         # 追加 markdown 中尚未引用的图片
         existing = set(re.findall(r'!\[.*?\]\(\s*(\S+?)\s*\)', markdown))
         for img_url in images:
             if img_url not in existing:
                 markdown += f"\n\n![]( {img_url} )"
+        markdown = _strip_svg_and_small(
+            markdown,
+            images,
+            IMAGE_DIMENSION_MIN_W,
+            IMAGE_DIMENSION_MIN_H,
+            base_url=final_url,
+        )
 
         return Article(
             title=title,
