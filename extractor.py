@@ -156,6 +156,24 @@ def _extract_images_from_html(html: str, base_url: str) -> list[str]:
     return _dedupe(images)
 
 
+def _strip_svg_and_small(markdown: str, images: list[str], min_w: int = 0, min_h: int = 0) -> str:
+    """Remove SVG images from images array and strip their markdown refs.
+    When min_w/min_h > 0, also strips inline ![](url) lines matching .svg extension.
+    Returns (possibly modified) markdown."""
+    # Strip SVG ![](url) lines from markdown (case-insensitive .svg extension)
+    markdown = re.sub(
+        r'!\[[^\]]*\]\(\s*([^)]*\.svg[^)]*)\s*\)', '', markdown, flags=re.IGNORECASE
+    )
+    markdown = re.sub(
+        r'!\[[^\]]*\]\(\s*([^)]*image/svg[^)]*)\s*\)', '', markdown, flags=re.IGNORECASE
+    )
+    # Remove SVGs from images array
+    images[:] = [url for url in images if not url.lower().endswith('.svg')
+                 and 'image/svg' not in url.lower()
+                 and '/svg' not in url.lower().rsplit('?', 1)[0]]
+    return markdown
+
+
 def _best_title_from_html(html: str, fallback: str = "") -> str:
     patterns = (
         r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
@@ -333,6 +351,7 @@ class HuaweiAutoAdapter(PlatformAdapter):
         for img_url in images:
             if img_url not in existing_imgs:
                 markdown += f"\n\n![]( {img_url} )"
+        markdown = _strip_svg_and_small(markdown, images)
 
         # ── 视频链接 ──
         video = cd.get("videoVo") or {}
@@ -440,6 +459,7 @@ class RequestsAdapter(PlatformAdapter):
         for img_url in article.images:
             if img_url not in existing:
                 article.markdown += f"\n\n![]( {img_url} )"
+        article.markdown = _strip_svg_and_small(article.markdown, article.images)
         if not article.title:
             article.title = _best_title_from_html(html, fallback="")
         if _is_quality_article(article, min_chars=200):
@@ -532,6 +552,7 @@ class PlaywrightAdapter(PlatformAdapter):
             + _extract_images_from_html(article_html, final_url)
             + _extract_images_from_html(html, final_url)
         )
+        markdown = _strip_svg_and_small(markdown, images)
 
         # 追加 markdown 中尚未引用的图片
         existing = set(re.findall(r'!\[.*?\]\(\s*(\S+?)\s*\)', markdown))
