@@ -75,9 +75,10 @@ python extractor.py "https://example.com/article" --image-fail-open
 
 三条提取路径（Huawei/Requests/Playwright）统一使用同一后处理流水线：
 
-1. 追加 markdown 中未引用但已提取到的图片。
-2. 同时从 `images` 和 markdown 图片引用中过滤 SVG/非正文图。
+1. 保留 Markdown 中已经按原文结构出现的图片，不再把孤儿图片追加到文末。
+2. 同时从 `images` 和 Markdown 图片引用中过滤 SVG/非正文图。
 3. 清理常见抽取噪音文本。
+4. 将 `Article.images` 同步为导出的 Markdown 中实际保留的图片引用，保证数量计数准确。
 
 图片过滤规则：
 `(宽 >= 700 或 高 >= 700) 且 宽/高 ∈ (0,1) ∪ (1,3]`。

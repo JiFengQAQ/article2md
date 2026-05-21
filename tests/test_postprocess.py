@@ -1,3 +1,4 @@
+import re
 from unittest.mock import patch
 
 from images import finalize_markdown_and_images
@@ -29,10 +30,41 @@ def test_finalize_markdown_and_images_shared_postprocess():
 
     assert "同意并继续" not in final_markdown
     assert "keep.png" in final_markdown
-    assert "add.png" in final_markdown
+    assert "add.png" not in final_markdown
     assert "small.png" not in final_markdown
     assert "icon.svg" not in final_markdown
     assert images == [
         "https://example.com/img/keep.png",
-        "https://example.com/img/add.png",
     ]
+
+
+def test_finalize_markdown_and_images_counts_only_exported_markdown_images():
+    base_url = "https://example.com/article/1"
+    images = [
+        "https://example.com/img/first.jpg",
+        "https://example.com/img/orphan.jpg",
+        "https://example.com/img/second.jpg",
+    ]
+    markdown = "前文\n\n![](/img/first.jpg)\n\n中段\n\n![](https://example.com/img/second.jpg)\n\n后文"
+
+    dims = {
+        "https://example.com/img/first.jpg": (900, 450),
+        "https://example.com/img/orphan.jpg": (1000, 800),
+        "https://example.com/img/second.jpg": (800, 900),
+    }
+
+    with patch("images._fetch_image_dimensions", side_effect=lambda url: dims[url]):
+        final_markdown = finalize_markdown_and_images(
+            markdown=markdown,
+            images=images,
+            base_url=base_url,
+            image_fail_open=False,
+        )
+
+    markdown_image_count = len(re.findall(r"!\[[^\]]*\]\([^\)]+\)", final_markdown))
+    assert "orphan.jpg" not in final_markdown
+    assert images == [
+        "https://example.com/img/first.jpg",
+        "https://example.com/img/second.jpg",
+    ]
+    assert len(images) == markdown_image_count == 2

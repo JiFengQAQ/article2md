@@ -74,19 +74,16 @@ def _normalize_markdown_image_url(url: str, base_url: str = "") -> str:
     return (url or "").strip().strip("<>").strip()
 
 
-def append_unreferenced_images(markdown: str, images: list[str], base_url: str = "") -> str:
-    """Append images not referenced in markdown so they remain visible in output."""
-    markdown = markdown or ""
-    existing = _markdown_image_urls(markdown)
-    existing_set = set(existing)
-    normalized_existing = {_normalize_markdown_image_url(url, base_url) for url in existing}
+def _sync_images_to_markdown(markdown: str, images: list[str], base_url: str = "") -> None:
+    """Keep Article.images aligned with image refs actually exported in Markdown."""
+    markdown_urls = _markdown_image_urls(markdown)
+    normalized_urls = [_normalize_markdown_image_url(url, base_url) for url in markdown_urls]
+    images[:] = _dedupe([url for url in normalized_urls if url])
 
-    for image_url in _dedupe(images):
-        if image_url in existing_set or image_url in normalized_existing:
-            continue
-        markdown += f"\n\n![]( {image_url} )"
-        existing_set.add(image_url)
-    return markdown
+
+def append_unreferenced_images(markdown: str, images: list[str], base_url: str = "") -> str:
+    """Deprecated: keep Markdown unchanged instead of appending orphan images."""
+    return markdown or ""
 
 
 def _is_svg_url(url: str) -> bool:
@@ -331,7 +328,6 @@ def finalize_markdown_and_images(
     from markdown import clean_markdown
 
     images[:] = _dedupe(images)
-    markdown = append_unreferenced_images(markdown, images, base_url=base_url)
     markdown = _strip_svg_and_non_content(
         markdown,
         images,
@@ -340,7 +336,9 @@ def finalize_markdown_and_images(
         base_url=base_url,
         fail_open=image_fail_open,
     )
-    return clean_markdown(markdown)
+    markdown = clean_markdown(markdown)
+    _sync_images_to_markdown(markdown, images, base_url=base_url)
+    return markdown
 
 
 # Backward-friendly aliases.

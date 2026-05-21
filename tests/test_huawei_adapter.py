@@ -1,4 +1,5 @@
 import json
+import re
 from unittest.mock import Mock, patch
 
 from adapters.huawei import HuaweiAutoAdapter
@@ -56,8 +57,10 @@ def test_huawei_adapter_parses_sample_payload():
     assert "https://video.example.com/in-block.mp4" in article.markdown
     assert "https://video.example.com/final.mp4" in article.markdown
     assert "https://img.example.com/body.jpg" in article.images
-    assert "https://img.example.com/fc.jpg" in article.images
-    assert "https://img.example.com/fcp.jpg" in article.images
+    assert "https://img.example.com/cover.jpg" in article.images
+    assert "https://img.example.com/fc.jpg" not in article.images
+    assert "https://img.example.com/fcp.jpg" not in article.images
+    assert len(article.images) == len(re.findall(r"!\[[^\]]*\]\([^\)]+\)", article.markdown))
 
     assert mock_get.call_count == 1
     assert mock_get.call_args.kwargs["params"]["contentId"] == "1642222"
