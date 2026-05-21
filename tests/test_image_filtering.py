@@ -1,19 +1,19 @@
 import unittest
 from unittest.mock import patch
 
-import extractor
+import images as image_utils
 
 
 class ImageFilteringTests(unittest.TestCase):
     def test_svg_url_variants_are_detected(self):
-        self.assertTrue(extractor._is_svg_url("https://example.com/icon.svg"))
-        self.assertTrue(extractor._is_svg_url("https://example.com/icon.svg?x=1"))
-        self.assertTrue(extractor._is_svg_url("https://example.com/img?format=image/svg+xml"))
+        self.assertTrue(image_utils._is_svg_url("https://example.com/icon.svg"))
+        self.assertTrue(image_utils._is_svg_url("https://example.com/icon.svg?x=1"))
+        self.assertTrue(image_utils._is_svg_url("https://example.com/img?format=image/svg+xml"))
 
     def test_relative_markdown_ref_is_removed_when_absolute_image_is_filtered(self):
         images = ["https://example.com/img/thumb.png"]
-        with patch.object(extractor, "_fetch_image_dimensions", return_value=(699, 500)):
-            markdown = extractor._strip_svg_and_non_content(
+        with patch.object(image_utils, "_fetch_image_dimensions", return_value=(699, 500)):
+            markdown = image_utils._strip_svg_and_non_content(
                 "before\n\n![](/img/thumb.png)\n\nafter",
                 images,
                 700,
@@ -42,8 +42,8 @@ class ImageFilteringTests(unittest.TestCase):
             "https://example.com/drop-panorama.png": (1600, 400),  # ratio>3 is excluded
             "https://example.com/unknown.png": None,               # default fail-closed
         }
-        with patch.object(extractor, "_fetch_image_dimensions", side_effect=lambda url: dims[url]):
-            markdown = extractor._strip_svg_and_non_content(
+        with patch.object(image_utils, "_fetch_image_dimensions", side_effect=lambda url: dims[url]):
+            markdown = image_utils._strip_svg_and_non_content(
                 "\n\n".join(f"![]({url})" for url in images),
                 images,
                 700,
@@ -62,8 +62,8 @@ class ImageFilteringTests(unittest.TestCase):
 
     def test_fail_open_keeps_unknown_dimension_images(self):
         images = ["https://example.com/unknown.png"]
-        with patch.object(extractor, "_fetch_image_dimensions", return_value=None):
-            markdown = extractor._strip_svg_and_non_content(
+        with patch.object(image_utils, "_fetch_image_dimensions", return_value=None):
+            markdown = image_utils._strip_svg_and_non_content(
                 "![](https://example.com/unknown.png)",
                 images,
                 700,

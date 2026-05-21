@@ -1,6 +1,12 @@
 # article2md
 
-文章链接 → Markdown 提取器。支持鸿蒙智行/AITO 社区内容，并通过 `requests + trafilatura` 与 Playwright 兜底提取常见新闻、媒体号、百科、微博长文等网页。
+文章链接 -> Markdown 提取器。支持鸿蒙智行/AITO 社区内容，并通过 `requests + trafilatura` 与 Playwright 兜底提取常见网页正文。
+
+通用网页提取新增“双兜底”策略（无域名特判）：
+
+- `readability` / `trafilatura` 结果质量不足时，自动从 HTML/渲染 DOM 中做候选正文容器打分提取。
+- 候选评分综合文本长度、段落数、正文标点/关键词、链接密度惩罚、导航/评论/推荐区域惩罚。
+- 适配新闻详情、博客文章、论坛长帖等常见页面结构。
 
 ## 安装
 
@@ -10,61 +16,93 @@ pip install -r requirements.txt
 
 ## 使用
 
+CLI：
+
 ```bash
-# CLI 输出 Markdown
+python extractor.py URL [--json] [--image-fail-open]
+```
+
+Python API：
+
+```python
+from extractor import article_to_markdown, article_to_dict, ArticleExtractor, Article
+```
+
+## 项目结构（单层根目录）
+
+```text
+README.md
+requirements.txt
+extractor.py
+cli.py
+models.py
+markdown.py
+images.py
+adapters/
+  __init__.py
+  base.py
+  content_candidates.py
+  huawei.py
+  requests_adapter.py
+  playwright_adapter.py
+tests/
+```
+
+模块职责：
+
+- `extractor.py`: 主 API（`article_to_markdown` / `article_to_dict`）与调度器 `ArticleExtractor`，也可直接作为 CLI 入口运行。
+- `cli.py`: CLI 实现。
+- `models.py`: `Article` 数据模型与共享常量。
+- `markdown.py`: HTML -> Markdown、正文清洗、标题提取、质量校验。
+- `images.py`: 图片 URL 提取/规范化、Markdown 图片解析、尺寸解析、正文图过滤。
+- `adapters/*`: 平台适配器实现。
+  - `content_candidates.py`: 通用候选正文容器评分与质量判定，供 requests/playwright 共享。
+
+## 示例
+
+```bash
+# Markdown 输出
 python extractor.py "https://omp.uopes.cn/static/webapp/share/article_details.html?contentId=1642222"
 
-# CLI 输出 JSON
+# JSON 输出
 python extractor.py "https://omp.uopes.cn/static/webapp/share/article_details.html?contentId=1642222" --json
 
-# 可选：图片尺寸探测失败时保留图片（默认会删除未知尺寸图片）
+# 图片尺寸探测失败时保留图片（默认 fail-closed）
 python extractor.py "https://example.com/article" --image-fail-open
 ```
 
-### Python 调用
+## 图文后处理规则
 
-```python
-from extractor import article_to_markdown, article_to_dict
+三条提取路径（Huawei/Requests/Playwright）统一使用同一后处理流水线：
 
-md = article_to_markdown(url)        # → str | None
-# 默认 image_fail_open=False：图片尺寸探测失败时删除该图片
-# 若要保留未知尺寸图片：article_to_markdown(url, image_fail_open=True)
-d = article_to_dict(url)             # → dict | None
-# d = {'title', 'subtitle', 'author', 'source_url', 'markdown', 'images'}
-```
+1. 追加 markdown 中未引用但已提取到的图片。
+2. 同时从 `images` 和 markdown 图片引用中过滤 SVG/非正文图。
+3. 清理常见抽取噪音文本。
 
-## 图文处理能力
+图片过滤规则：
+`(宽 >= 700 或 高 >= 700) 且 宽/高 ∈ (0,1) ∪ (1,3]`。
 
-- 已知平台优先走 API，普通网页优先走 `requests + trafilatura`，质量不足时用 Playwright 渲染兜底。
-- Markdown 会保留正文图片；当正文抽取器漏掉图片时，会从原始 HTML / 渲染 DOM 中补齐未引用图片。
-- SVG 会从 `images` 数组和 Markdown 图片引用中同时剔除。
-- 非正文图会从 `images` 数组和 Markdown 图片引用中同时剔除：仅保留满足 `(宽度 ≥ 700 或 高度 ≥ 700) 且 宽度/高度 ∈ (0, 1) ∪ (1, 3]` 的图片；方图、过小图、超宽长图会被视为头像、图标、缩略图或装饰图。
-- 图片尺寸检测直接解析 JPEG / PNG / GIF / WebP 头部字节，不依赖 Pillow；默认采用 fail-closed：网络失败或未知格式会删除该图片；可通过 `image_fail_open=True` 或 CLI `--image-fail-open` 改为保留未知尺寸图片。
+- 未知尺寸默认 `fail-closed`（删除）。
+- `image_fail_open=True` 或 `--image-fail-open` 时改为保留未知尺寸图片。
 
-## 已知限制
+## 能力与局限
 
-- CAPTCHA、登录墙、强反爬空白页无法通用提取。
-- 视频分享页不是文章页，当前不会把视频口播/字幕转成正文。
-- 站点返回错误编码时会使用 apparent encoding 修正常见中文乱码，但极端混合编码页面仍可能需要上游修复。
-
-## 支持的内容类型
-
-| 类型 | 说明 | 正文来源 | 图片 |
-|------|------|----------|------|
-| type=4 articleContentType=1 | 官方文章（功能解读） | richText HTML | 内嵌 + imageContent |
-| type=8 articleType=2 | PGC 文章 | mainBodyText | imageUrl / fileContent |
-| type=4 articleType=2 | 转发帖 | mainBodyText | 视频封面 |
-| type=0 | 用户帖 | textContent | imageContent / fileContent |
+- 对常见正文页（`article/main/role=main` 或 `content/post/detail` 类容器）有较强泛化提取能力。
+- 对强登录墙、强反爬、纯视频页、重度聚合页仍可能只能拿到短文本或失败。
+- 若页面主体本身是短讯，输出长度会随源文长度而短，不会做站点特判补写。
 
 ## 扩展新平台
 
-继承 `PlatformAdapter`，实现 `can_handle()` 和 `extract()`，注册到 `ArticleExtractor.adapters` 即可。
+在 `adapters/` 新建适配器并继承 `PlatformAdapter`，实现：
 
-## 可选：Playwright 兜底
+- `can_handle(url) -> bool`
+- `extract(url) -> Article | None`
+
+然后在 `extractor.py` 的 `ArticleExtractor.adapters` 中注册。
+
+## 可选 Playwright 兜底
 
 ```bash
 pip install playwright readability-lxml
 playwright install chromium
 ```
-
-安装后，未知 URL 会自动走无头浏览器渲染路径。
