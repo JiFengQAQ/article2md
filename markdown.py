@@ -6,25 +6,66 @@ import re
 from typing import Optional
 from urllib.parse import urlparse
 
-from html2text import HTML2Text
+from markdownify import markdownify
 
 from models import Article, BOILERPLATE_PATTERNS, CAPTCHA_PATTERNS
 
+_EMPTY_HEADING_PATTERN = re.compile(r"^#{1,6}\s*$")
+_POST_ARTICLE_BOUNDARY_PATTERNS = (
+    re.compile(r"^评论(?:\s*[\(（]\s*\d+\s*[\)）])?$"),
+    re.compile(r"^发表评论$"),
+    re.compile(r"^查看更多\s*\d+\s*条评论$"),
+    re.compile(r"^(?:热门推荐|相关推荐|相关阅读)$"),
+    re.compile(r"^回首页看更多.*$"),
+    re.compile(r"^文明上网理性发言.*$"),
+)
 
-def _make_converter() -> HTML2Text:
-    converter = HTML2Text()
-    converter.body_width = 0
-    converter.ignore_links = False
-    converter.ignore_images = False
-    converter.images_to_alt = False
-    converter.skip_internal_links = False
-    converter.protect_links = True
-    return converter
+
+def _normalize_markdown(markdown: str) -> str:
+    markdown = (markdown or "").replace("\r\n", "\n")
+    markdown = re.sub(r"\n{3,}", "\n\n", markdown)
+    return markdown.strip()
 
 
 def html_to_markdown(html: str) -> str:
     """Convert rich HTML to Markdown."""
-    return _make_converter().handle(html).strip()
+    if not html:
+        return ""
+    markdown = markdownify(
+        html,
+        heading_style="ATX",
+        bullets="*",
+        strip=("script", "style"),
+    )
+    return _normalize_markdown(markdown)
+
+
+def _line_text_for_matching(line: str) -> str:
+    text = line.strip()
+    text = re.sub(r"^(?:>\s*)+", "", text)
+    text = re.sub(r"^#{1,6}\s*", "", text)
+    text = re.sub(r"^(?:[*+-]|\d+\.)\s+", "", text)
+    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    return text.strip()
+
+
+def _is_post_article_boundary(line: str) -> bool:
+    normalized = _line_text_for_matching(line)
+    if not normalized:
+        return False
+    return any(pattern.match(normalized) for pattern in _POST_ARTICLE_BOUNDARY_PATTERNS)
+
+
+def _is_meaningful_content_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    if _EMPTY_HEADING_PATTERN.match(stripped):
+        return False
+    if re.match(r"^!\[[^\]]*\]\([^)]+\)$", stripped):
+        return True
+    return bool(re.search(r"[A-Za-z0-9\u4e00-\u9fff]", _line_text_for_matching(stripped)))
 
 
 def clean_markdown(markdown: str) -> str:
@@ -34,9 +75,16 @@ def clean_markdown(markdown: str) -> str:
 
     lines: list[str] = []
     previous_blank = False
+    content_started = False
     for line in markdown.replace("\r\n", "\n").split("\n"):
         stripped = line.strip()
+        if _EMPTY_HEADING_PATTERN.match(stripped):
+            continue
         if any(re.search(pattern, stripped, re.IGNORECASE) for pattern in BOILERPLATE_PATTERNS):
+            continue
+        if _is_post_article_boundary(line):
+            if content_started:
+                break
             continue
         if not stripped:
             if not previous_blank:
@@ -44,6 +92,8 @@ def clean_markdown(markdown: str) -> str:
             previous_blank = True
             continue
         lines.append(line.rstrip())
+        if _is_meaningful_content_line(line):
+            content_started = True
         previous_blank = False
     return "\n".join(lines).strip()
 

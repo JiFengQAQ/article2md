@@ -1,6 +1,6 @@
 # article2md
 
-文章链接 -> Markdown 提取器。支持鸿蒙智行/AITO 社区内容，并通过 `requests + trafilatura` 与 Playwright 兜底提取常见网页正文。
+文章链接 -> Markdown 提取器。支持鸿蒙智行/AITO 社区内容，并通过 `requests + trafilatura + markdownify` 与 Playwright 兜底提取常见网页正文。
 
 通用网页提取新增“双兜底”策略（无域名特判）：
 
