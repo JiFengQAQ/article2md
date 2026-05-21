@@ -5,6 +5,25 @@ import images as image_utils
 
 
 class ImageFilteringTests(unittest.TestCase):
+    def test_extract_images_from_html_handles_common_img_attributes(self):
+        html = '''
+        <article>
+          <img src="/images/hero.jpg">
+          <img data-src="https://cdn.example.com/lazy.webp">
+          <img srcset="/images/large.jpg 1200w, /images/small.jpg 600w">
+          <img src="data:image/png;base64,AAAA">
+        </article>
+        '''
+
+        self.assertEqual(
+            image_utils._extract_images_from_html(html, "https://example.com/news/1"),
+            [
+                "https://example.com/images/hero.jpg",
+                "https://cdn.example.com/lazy.webp",
+                "https://example.com/images/large.jpg",
+            ],
+        )
+
     def test_svg_url_variants_are_detected(self):
         self.assertTrue(image_utils._is_svg_url("https://example.com/icon.svg"))
         self.assertTrue(image_utils._is_svg_url("https://example.com/icon.svg?x=1"))

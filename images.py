@@ -44,11 +44,11 @@ def _normalize_image_url(src: str, base_url: str) -> str:
 
 def _extract_images_from_html(html: str, base_url: str) -> list[str]:
     images: list[str] = []
-    for match in re.finditer(r"<img\\b[^>]*>", html or "", flags=re.IGNORECASE):
+    for match in re.finditer(r"<img\b[^>]*>", html or "", flags=re.IGNORECASE):
         tag = match.group(0)
         src = ""
         for attr in ("src", "data-src", "data-original", "data-lazy-src", "srcset", "data-srcset"):
-            found = re.search(rf'{attr}\\s*=\\s*["\']([^"\']+)["\']', tag, flags=re.IGNORECASE)
+            found = re.search(rf'{attr}\s*=\s*["\']([^"\']+)["\']', tag, flags=re.IGNORECASE)
             if found:
                 src = found.group(1).split(",")[0].strip().split(" ")[0]
                 break
