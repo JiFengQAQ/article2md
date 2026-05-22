@@ -212,6 +212,117 @@ def test_is_quality_article_rejects_generic_antibot_javascript_payload():
     assert not is_quality_article(article, min_chars=20)
 
 
+def test_is_quality_article_rejects_yiche_style_obfuscated_cookie_reload_payload():
+    from markdown import is_quality_article
+    from models import Article
+
+    article = Article(
+        title="华为发布 乾崑 智驾 ADS 4.0",
+        source_url="https://news.yiche.com/hao/wenzhang/99996310",
+        markdown=(
+            "var _xvasu = 1104958253; var _xvtsc = 300; var _xvpfs = 'tws2_'; "
+            "document.cookie = _xvpfs + _xvasu; "
+            "window.location.reload(); "
+            "function a3_0x5716(){return ['constructor','apply','setTime','cookie','reload'];}"
+        ),
+    )
+
+    assert not is_quality_article(article, min_chars=20)
+
+
+def test_is_quality_article_rejects_markdown_escaped_byted_acrawler_payload():
+    from markdown import is_quality_article
+    from models import Article
+
+    article = Article(
+        title="华为ADS乾崑智驾，从3到4有何变化？解读来了",
+        source_url="https://www.dongchedi.com/article/7497192178674893375",
+        markdown=(
+            "var glb; window.byted\\_acrawler.init({aid:99999999}); "
+            "var \\_\\_ac\\_signature = window.byted\\_acrawler.sign('', nonce); "
+            'document.cookie = "\\\\_\\\\_ac\\\\_signature=..."; '
+            "window.location.reload();"
+        ),
+    )
+
+    assert not is_quality_article(article, min_chars=20)
+
+
+def test_is_quality_article_allows_business_script_with_single_reload_when_article_is_substantive():
+    from markdown import is_quality_article
+    from models import Article
+
+    article = Article(
+        title="华为乾崑 ADS 4.0 技术进展解读",
+        source_url="https://xueqiu.com/1461080850/355397242",
+        markdown="""
+        华为乾崑 ADS 4.0 在感知链路、规划策略与执行稳定性方面做了系统升级，发布会详细介绍了
+        高速与城区场景的一体化策略，并披露了多传感器协同下的冗余安全机制。
+
+        研发团队表示，这次升级覆盖了车位到车位的关键环节，重点提升了复杂路口的通行效率、
+        异常目标识别能力和弱网环境下的可用性，同时通过持续回归降低高频场景误触发概率。
+
+        页面上的确认按钮会提示用户：若内容未刷新，可执行 window.location.reload 后继续阅读，
+        该提示仅用于常规前端交互，不代表任何访问验证或反爬流程。
+
+        产品团队还强调会继续开放更多调试指标，方便开发者在真实交通环境下定位问题并验证修复效果，
+        最终目标是提升日常通勤与长途出行的体验一致性与可靠性。
+        """,
+    )
+
+    assert is_quality_article(article, min_chars=160)
+
+
+def test_is_quality_article_rejects_sina_visitor_wall_payload():
+    from markdown import is_quality_article
+    from models import Article
+
+    article = Article(
+        title="Sina Visitor System",
+        source_url="https://passport.weibo.com/visitor/visitor?a=enter&url=https%3A%2F%2Fweibo.com%2Ftv%2Fshow%2F1034%3A5203573877702693",
+        markdown=(
+            "Sina Visitor System\n"
+            "window.use_fp = '1';\n"
+            "var incarnate_intr = 'https://' + window.location.host + '/visitor/visitor?a=incarnate';\n"
+            "var return_url = 'https://weibo.com/tv/show/1034:5203573877702693';"
+        ),
+    )
+
+    assert not is_quality_article(article, min_chars=20)
+
+
+def test_is_quality_article_rejects_short_unauthorized_access_json_payload():
+    from markdown import is_quality_article
+    from models import Article
+
+    article = Article(
+        title="",
+        source_url="https://www.yoojia.com/article/9575645731207335813.html",
+        markdown='{"statusCode":401,"message":"Unauthorized access"}',
+    )
+
+    assert not is_quality_article(article, min_chars=20)
+
+
+def test_is_quality_article_rejects_generic_edge_security_block_page():
+    from markdown import is_quality_article
+    from models import Article
+
+    article = Article(
+        title="请求已被拦截",
+        source_url="https://example.com/news/123",
+        markdown=(
+            "请求已被拦截\n"
+            "请求已被站点的安全策略拦截。本站点已启用安全防护服务以抵御在线攻击，"
+            "本次访问已被限制。若此页面持续出现，请联系网站管理员，并提供当前页面显示的请求 ID。\n"
+            "请求 ID: 9291747337293192112 请求时间: 2026-05-23 06:03:30 UTC+8\n"
+            "由 Tencent Cloud EdgeOne 提供防护"
+        ),
+    )
+
+    assert not is_quality_article(article, min_chars=20)
+
+
 def test_clean_markdown_removes_residual_css_blocks():
     raw = """
     .data_color_scheme_dark{--weui-BG-0:#111;--weui-FG-0:#eee;}

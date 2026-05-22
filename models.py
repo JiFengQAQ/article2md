@@ -35,7 +35,6 @@ CAPTCHA_PATTERNS = (
     "byted_acrawler",
     "__ac_signature",
     "__ac_nonce",
-    "window.location.reload",
 )
 
 BOILERPLATE_PATTERNS = (

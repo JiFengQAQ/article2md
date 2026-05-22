@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 _INVALID_IMAGE_SCHEMES = ("data:", "blob:", "javascript:")
 _PLACEHOLDER_IMAGE_HINTS = (
     "placeholder",
+    "holder.png",
+    "holder.jpg",
+    "holder.webp",
+    "holder.gif",
     "spacer",
     "blank",
     "lazyload",
@@ -105,7 +109,15 @@ def _valid_candidate_urls(img: object, base_url: str) -> list[str]:
             if srcset_url:
                 raw_candidates.append(srcset_url)
 
-    for attr in ("src", "data-src", "data-original", "data-lazy-src", "data-actualsrc", "poster"):
+    for attr in (
+        "src",
+        "data-src",
+        "data-original",
+        "data-webp",
+        "data-lazy-src",
+        "data-actualsrc",
+        "poster",
+    ):
         value = img.get(attr)
         if value:
             raw_candidates.append(value)

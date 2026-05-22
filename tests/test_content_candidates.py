@@ -242,6 +242,42 @@ def test_requests_adapter_normalizes_lazy_images_and_exports_absolute_markdown_u
     assert article.images == ["https://example.com/assets/cover.jpg"]
 
 
+def test_build_article_from_html_preserves_standalone_image_blocks_in_candidate_body():
+    html = """
+    <html><body>
+      <article class="news-detail content-body article-content">
+        <h1>图文正文保留测试</h1>
+        <p>第一段正文：发布会披露了系统升级路线，包含感知融合、规划控制和工程验证流程，覆盖城市与高速多场景，强调长期稳定性与安全冗余。</p>
+        <p><img src="/images/p-inline.jpg" alt="段落内配图"></p>
+        <p>第二段正文：团队介绍了版本回归策略与问题闭环机制，并展示了多个复杂路况样例，说明新架构在真实环境中的适应能力持续提升。</p>
+        <figure><img src="/images/figure.jpg" alt="图注配图"></figure>
+        <p>第三段正文：后续会开放更多调试指标与性能观测能力，帮助合作伙伴更高效定位问题，缩短迭代周期并提高交付一致性。</p>
+        <div class="image-only"><img src="/images/div-only.jpg" alt="独立图片区块"></div>
+        <p>第四段正文：产品团队还强调将继续完善异常处理机制与冗余策略，在复杂交通环境中维持稳定体验。</p>
+      </article>
+    </body></html>
+    """
+
+    with patch("images._fetch_image_dimensions", return_value=(1280, 720)):
+        article = build_article_from_html(
+            html=html,
+            final_url="https://example.com/news/200",
+            source_url="https://example.com/news/200",
+            image_fail_open=False,
+            min_chars=120,
+        )
+
+    assert article is not None
+    assert "https://example.com/images/p-inline.jpg" in article.markdown
+    assert "https://example.com/images/figure.jpg" in article.markdown
+    assert "https://example.com/images/div-only.jpg" in article.markdown
+    assert article.images == [
+        "https://example.com/images/p-inline.jpg",
+        "https://example.com/images/figure.jpg",
+        "https://example.com/images/div-only.jpg",
+    ]
+
+
 class _FakeLocator:
     def __init__(self, text: str):
         self._text = text

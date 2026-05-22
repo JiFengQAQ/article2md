@@ -388,9 +388,10 @@ def _should_prune_noise(node: Any) -> bool:
     if tag not in {"div", "section", "ul", "ol", "li"}:
         return False
 
+    has_media = bool(node.xpath(".//img|.//picture|.//figure|.//video|.//source"))
     text = _node_text(node)
     text_chars = _char_count(text)
-    if text_chars == 0:
+    if text_chars == 0 and not has_media:
         return True
 
     link_text = _compact_whitespace(" ".join(node.xpath(".//a//text()")))

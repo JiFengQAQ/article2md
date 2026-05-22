@@ -199,12 +199,29 @@ def clean_markdown(markdown: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _pattern_haystack(*parts: str) -> str:
+    """Normalize text for payload-pattern matching after Markdown escaping."""
+    haystack = "\n".join(part or "" for part in parts).lower()
+    return haystack.replace("\\_", "_")
+
+
 def _is_captcha(title: str = "", text: str = "", url: str = "") -> bool:
-    haystack = "\n".join([title or "", text or "", url or ""]).lower()
+    haystack = _pattern_haystack(title, text, url)
     parsed = urlparse(url or "")
     if parsed.netloc.endswith("passport.baidu.com"):
         return True
     if "captcha" in parsed.path.lower() or "captcha" in parsed.query.lower():
+        return True
+    yiche_obfuscated_tokens = (
+        "_xvasu",
+        "_xvtsc",
+        "_xvpfs",
+        "document.cookie",
+        "window['location']",
+        "window.location",
+    )
+    yiche_hit_count = sum(1 for token in yiche_obfuscated_tokens if token in haystack)
+    if yiche_hit_count >= 3 and ("reload" in haystack or "cookie" in haystack):
         return True
     return any(pattern.lower() in haystack for pattern in CAPTCHA_PATTERNS)
 
@@ -216,6 +233,42 @@ def _content_text(markdown: str) -> str:
     return text
 
 
+def _is_access_wall_payload(title: str = "", text: str = "", url: str = "") -> bool:
+    title_lower = (title or "").strip().lower()
+    text_lower = (text or "").lower()
+    compact = re.sub(r"\s+", "", text_lower)
+    parsed = urlparse(url or "")
+    url_lower = (url or "").lower()
+
+    if "sina visitor system" in title_lower or "sina visitor system" in text_lower:
+        return True
+    if parsed.path.lower().startswith("/visitor/visitor") or "/visitor/visitor" in url_lower:
+        return True
+    if "visitor/visitor" in text_lower and ("window.use_fp" in text_lower or "incarnate" in text_lower):
+        return True
+
+    unauthorized_message = "unauthorizedaccess" in compact or "unauthorized access" in text_lower
+    unauthorized_status = bool(re.search(r'"(?:status(?:_?code)?|code)"\s*:\s*401\b', text_lower))
+    if unauthorized_message and unauthorized_status and len(_content_text(text)) <= 180:
+        return True
+
+    edge_security_markers = (
+        "请求已被拦截",
+        "安全策略拦截",
+        "在线攻击",
+        "请求 id",
+        "tencent cloud edgeone",
+        "edgeone web 安全分析",
+        "access denied",
+        "request blocked",
+    )
+    edge_security_hits = sum(1 for marker in edge_security_markers if marker in text_lower or marker in title_lower)
+    if edge_security_hits >= 2:
+        return True
+
+    return False
+
+
 def is_quality_article(article: Optional[Article], min_chars: int = 100) -> bool:
     if not article:
         return False
@@ -223,9 +276,12 @@ def is_quality_article(article: Optional[Article], min_chars: int = 100) -> bool
     title = (article.title or "").strip()
     if _is_captcha(title=title, text=markdown, url=article.source_url):
         return False
+    if _is_access_wall_payload(title=title, text=markdown, url=article.source_url):
+        return False
     if len(_content_text(markdown)) < min_chars:
         return False
-    captcha_hits = sum(1 for pattern in CAPTCHA_PATTERNS if pattern.lower() in markdown.lower())
+    normalized_markdown = _pattern_haystack(markdown)
+    captcha_hits = sum(1 for pattern in CAPTCHA_PATTERNS if pattern.lower() in normalized_markdown)
     if captcha_hits >= 2:
         return False
     article.markdown = markdown

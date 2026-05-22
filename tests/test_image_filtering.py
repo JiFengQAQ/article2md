@@ -45,6 +45,21 @@ class ImageFilteringTests(unittest.TestCase):
         self.assertIn('src="https://cdn.example.com/real.jpg"', normalized)
         self.assertNotIn('/images/v2/t.png', normalized)
 
+    def test_normalize_html_images_holder_placeholder_prefers_real_lazy_sources(self):
+        html = """
+        <article>
+          <img id="a" src="/assets/holder.png" data-src="/images/a-real.jpg">
+          <img id="b" src="/assets/holder.png" data-webp="https://cdn.example.com/b-real.webp">
+          <img id="c" src="/assets/holder.png" srcset="/images/c-320.jpg 320w, /images/c-1280.jpg 1280w">
+        </article>
+        """
+
+        normalized = image_utils.normalize_html_images(html, "https://example.com/news/1")
+
+        self.assertRegex(normalized, r'id="a"[^>]*src="https://example\.com/images/a-real\.jpg"')
+        self.assertRegex(normalized, r'id="b"[^>]*src="https://cdn\.example\.com/b-real\.webp"')
+        self.assertRegex(normalized, r'id="c"[^>]*src="https://example\.com/images/c-1280\.jpg"')
+
     def test_normalize_html_images_drops_obviously_invalid_image_sources(self):
         html = """
         <article>
