@@ -85,12 +85,12 @@ class ImageFilteringTests(unittest.TestCase):
 
     def test_relative_markdown_ref_is_removed_when_absolute_image_is_filtered(self):
         images = ["https://example.com/img/thumb.png"]
-        with patch.object(image_utils, "_fetch_image_dimensions", return_value=(699, 500)):
+        with patch.object(image_utils, "_fetch_image_dimensions", return_value=(479, 300)):
             markdown = image_utils._strip_svg_and_non_content(
                 "before\n\n![](/img/thumb.png)\n\nafter",
                 images,
-                700,
-                3,
+                480,
+                5,
                 base_url="https://example.com/article/1",
             )
         self.assertNotIn("thumb.png", markdown)
@@ -108,30 +108,29 @@ class ImageFilteringTests(unittest.TestCase):
             "https://example.com/unknown.png",
         ]
         dims = {
-            "https://example.com/keep-landscape.png": (900, 450),  # ratio=2, long side OK
-            "https://example.com/keep-portrait.png": (500, 700),   # ratio<1, long side OK
-            "https://example.com/drop-small.png": (699, 500),      # long side too short
-            "https://example.com/drop-square.png": (700, 700),     # ratio=1 is accepted
-            "https://example.com/drop-panorama.png": (1600, 400),  # ratio>3 is excluded
+            "https://example.com/keep-landscape.png": (900, 450),  # landscape, w≥480, ratio=2≤5 → keep
+            "https://example.com/keep-portrait.png": (500, 700),   # portrait, h≥480 → keep (no ratio limit)
+            "https://example.com/drop-small.png": (479, 300),      # both < 480 → drop
+            "https://example.com/drop-square.png": (700, 700),     # square → drop
+            "https://example.com/drop-panorama.png": (3000, 500),  # landscape, w≥480, ratio=6>5 → drop
             "https://example.com/unknown.png": None,               # default fail-closed
         }
         with patch.object(image_utils, "_fetch_image_dimensions", side_effect=lambda url: dims[url]):
             markdown = image_utils._strip_svg_and_non_content(
                 "\n\n".join(f"![]({url})" for url in images),
                 images,
-                700,
-                3,
+                480,
+                5,
             )
         self.assertIn("keep-landscape.png", markdown)
         self.assertIn("keep-portrait.png", markdown)
-        self.assertIn("drop-square.png", markdown)
         self.assertNotIn("drop-small.png", markdown)
+        self.assertNotIn("drop-square.png", markdown)
         self.assertNotIn("drop-panorama.png", markdown)
         self.assertNotIn("unknown.png", markdown)
         self.assertEqual(images, [
             "https://example.com/keep-landscape.png",
             "https://example.com/keep-portrait.png",
-            "https://example.com/drop-square.png",
         ])
 
     def test_fail_open_keeps_unknown_dimension_images(self):
@@ -140,8 +139,8 @@ class ImageFilteringTests(unittest.TestCase):
             markdown = image_utils._strip_svg_and_non_content(
                 "![](https://example.com/unknown.png)",
                 images,
-                700,
-                3,
+                480,
+                5,
                 fail_open=True,
             )
         self.assertIn("unknown.png", markdown)

@@ -1,7 +1,7 @@
 import struct
 
 from images import _is_content_image_dimensions, _parse_image_dimensions
-from models import IMAGE_ASPECT_RATIO_MAX, IMAGE_DIMENSION_MIN_LONG_SIDE
+from models import IMAGE_ASPECT_RATIO_MAX, IMAGE_DIMENSION_MIN_SIDE
 
 
 def _png_bytes(width: int, height: int) -> bytes:
@@ -55,18 +55,33 @@ def test_parse_dimensions_jpeg():
 
 
 def test_content_image_dimension_rule():
-    assert _is_content_image_dimensions((480, 360), min_long_side=480, max_aspect_ratio=5)
-    assert _is_content_image_dimensions((640, 427), min_long_side=480, max_aspect_ratio=5)
-    assert _is_content_image_dimensions((660, 310), min_long_side=480, max_aspect_ratio=5)
-    assert _is_content_image_dimensions((660, 372), min_long_side=480, max_aspect_ratio=5)
-    assert _is_content_image_dimensions((744, 3050), min_long_side=480, max_aspect_ratio=5)
-    assert _is_content_image_dimensions((3050, 744), min_long_side=480, max_aspect_ratio=5)
-    assert _is_content_image_dimensions((700, 700), min_long_side=480, max_aspect_ratio=5)
+    min_side = IMAGE_DIMENSION_MIN_SIDE
+    max_aspect = IMAGE_ASPECT_RATIO_MAX
 
-    assert not _is_content_image_dimensions((479, 300), min_long_side=480, max_aspect_ratio=5)
-    assert not _is_content_image_dimensions((3000, 500), min_long_side=480, max_aspect_ratio=5)
+    # – keep: at least one side ≥ 480, landscape ratio ≤ 5, not square
+    assert _is_content_image_dimensions((480, 360), min_side=min_side, max_landscape_aspect=max_aspect)
+    assert _is_content_image_dimensions((640, 427), min_side=min_side, max_landscape_aspect=max_aspect)
+    assert _is_content_image_dimensions((660, 310), min_side=min_side, max_landscape_aspect=max_aspect)
+    assert _is_content_image_dimensions((660, 372), min_side=min_side, max_landscape_aspect=max_aspect)
+    assert _is_content_image_dimensions((3050, 744), min_side=min_side, max_landscape_aspect=max_aspect)
+
+    # – keep: portrait, h ≥ 480, NO aspect ratio limit
+    assert _is_content_image_dimensions((744, 3050), min_side=min_side, max_landscape_aspect=max_aspect)
+    assert _is_content_image_dimensions((400, 800), min_side=min_side, max_landscape_aspect=max_aspect)
+    assert _is_content_image_dimensions((300, 5000), min_side=min_side, max_landscape_aspect=max_aspect)
+
+    # – reject: both sides < 480
+    assert not _is_content_image_dimensions((479, 300), min_side=min_side, max_landscape_aspect=max_aspect)
+    assert not _is_content_image_dimensions((300, 479), min_side=min_side, max_landscape_aspect=max_aspect)
+
+    # – reject: landscape ratio > 5
+    assert not _is_content_image_dimensions((3000, 500), min_side=min_side, max_landscape_aspect=max_aspect)
+
+    # – reject: square
+    assert not _is_content_image_dimensions((700, 700), min_side=min_side, max_landscape_aspect=max_aspect)
+    assert not _is_content_image_dimensions((500, 500), min_side=min_side, max_landscape_aspect=max_aspect)
 
 
 def test_default_image_threshold_constants():
-    assert IMAGE_DIMENSION_MIN_LONG_SIDE == 480
+    assert IMAGE_DIMENSION_MIN_SIDE == 480
     assert IMAGE_ASPECT_RATIO_MAX == 5.0

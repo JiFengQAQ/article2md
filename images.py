@@ -16,7 +16,7 @@ from models import (
     IMAGE_ASPECT_RATIO_MAX,
     IMAGE_DIMENSION_BYTE_CAP,
     IMAGE_DIMENSION_FAIL_OPEN,
-    IMAGE_DIMENSION_MIN_LONG_SIDE,
+    IMAGE_DIMENSION_MIN_SIDE,
     IMAGE_DIMENSION_TIMEOUT,
     IMAGE_DIMENSION_WORKERS,
     USER_AGENT,
@@ -372,26 +372,31 @@ def _strip_filtered_markdown_images(markdown: str, filtered_urls: set[str], base
 
 def _is_content_image_dimensions(
     dimensions: tuple[int, int],
-    min_long_side: int = IMAGE_DIMENSION_MIN_LONG_SIDE,
-    max_aspect_ratio: float = IMAGE_ASPECT_RATIO_MAX,
+    min_side: int = IMAGE_DIMENSION_MIN_SIDE,
+    max_landscape_aspect: float = IMAGE_ASPECT_RATIO_MAX,
 ) -> bool:
-    """Keep likely article images: large enough and not extremely elongated."""
+    """Keep article images: one side ≥ min_side, not square; portrait unlimited, landscape ratio ≤ max_landscape_aspect."""
     width, height = dimensions
     if width <= 0 or height <= 0:
         return False
-    long_side = max(width, height)
-    short_side = min(width, height)
-    if short_side <= 0:
+    # Reject square images
+    if width == height:
         return False
-    ratio = long_side / short_side
-    return long_side >= min_long_side and ratio <= max_aspect_ratio
+    # At least one side must meet the minimum
+    if width < min_side and height < min_side:
+        return False
+    # Landscape: width > height, enforce aspect ratio cap
+    if width > height:
+        return width / height <= max_landscape_aspect
+    # Portrait: no aspect ratio limit
+    return True
 
 
 def _strip_svg_and_non_content(
     markdown: str,
     images: list[str],
-    min_long_side: int = 0,
-    max_aspect_ratio: float = 0,
+    min_side: int = 0,
+    max_landscape_aspect: float = 0,
     base_url: str = "",
     fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
     dimension_fetcher: Optional[Callable[[str], Optional[tuple[int, int]]]] = None,
@@ -411,8 +416,8 @@ def _strip_svg_and_non_content(
     probe_urls = [
         url
         for url in candidates
-        if min_long_side > 0
-        and max_aspect_ratio > 0
+        if min_side > 0
+        and max_landscape_aspect > 0
         and url not in filtered_urls
         and urlparse(url).scheme in ("http", "https")
     ]
@@ -435,8 +440,8 @@ def _strip_svg_and_non_content(
                     continue
                 if not _is_content_image_dimensions(
                     dimensions,
-                    min_long_side=min_long_side,
-                    max_aspect_ratio=max_aspect_ratio,
+                    min_side=min_side,
+                    max_landscape_aspect=max_landscape_aspect,
                 ):
                     filtered_urls.add(url)
 
@@ -449,8 +454,8 @@ def finalize_markdown_and_images(
     images: list[str],
     base_url: str,
     image_fail_open: bool,
-    min_long_side: int = IMAGE_DIMENSION_MIN_LONG_SIDE,
-    max_aspect_ratio: float = IMAGE_ASPECT_RATIO_MAX,
+    min_side: int = IMAGE_DIMENSION_MIN_SIDE,
+    max_landscape_aspect: float = IMAGE_ASPECT_RATIO_MAX,
 ) -> str:
     """Shared adapter post-processing pipeline."""
     from markdown import clean_markdown
@@ -460,8 +465,8 @@ def finalize_markdown_and_images(
     markdown = _strip_svg_and_non_content(
         markdown,
         images,
-        min_long_side=min_long_side,
-        max_aspect_ratio=max_aspect_ratio,
+        min_side=min_side,
+        max_landscape_aspect=max_landscape_aspect,
         base_url=base_url,
         fail_open=image_fail_open,
     )

@@ -96,7 +96,7 @@ python extractor.py "https://example.com/article" --image-fail-open
 4. 将 `Article.images` 同步为导出 Markdown 中实际保留的图片引用，保证数量计数准确。
 
 图片过滤规则：
-`长边 >= 480 且 max(宽/高, 高/宽) <= 5`。
+`宽 ≥ 480 或 高 ≥ 480，非方图；横向（宽>高）宽高比 ≤ 5，纵向无限制`。
 
 - 未知尺寸默认 `fail-closed`（删除）。
 - `image_fail_open=True` 或 `--image-fail-open` 时改为保留未知尺寸图片。
