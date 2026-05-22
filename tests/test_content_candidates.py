@@ -1,5 +1,3 @@
-import sys
-from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from adapters.content_candidates import extract_best_candidate_html
@@ -41,6 +39,29 @@ SAMPLE_HTML = """
 """.strip()
 
 
+SIBLING_HTML = """
+<html>
+  <head><title>分段正文</title></head>
+  <body>
+    <div class="page-shell">
+      <div class="breadcrumb"><a href="/">首页</a> / 资讯</div>
+      <div class="wrap">
+        <div>
+          <p>第一段正文：记者在发布现场表示，本次升级覆盖底盘、智驾与座舱协同，重点优化复杂工况稳定性。</p>
+          <p>第二段正文：研发团队介绍，方案已经在多城路测环境完成长期验证，并对高频场景进行了专项回归。</p>
+        </div>
+        <div>
+          <p>第三段正文：新版本将向合作伙伴开放调试接口与质量分析工具，帮助产业链缩短接入周期。</p>
+          <p>第四段正文：后续还会逐步扩展可解释能力与异常诊断机制，提升交付效率和维护体验。</p>
+        </div>
+        <div class="related-list">相关阅读：<a href="/x">链接1</a><a href="/y">链接2</a></div>
+      </div>
+    </div>
+  </body>
+</html>
+""".strip()
+
+
 def test_candidate_extraction_prefers_main_article_container():
     candidate_html = extract_best_candidate_html(SAMPLE_HTML, min_chars=220)
     assert candidate_html is not None
@@ -52,7 +73,36 @@ def test_candidate_extraction_prefers_main_article_container():
     assert "评论区" not in markdown
 
 
-def test_requests_adapter_uses_candidate_when_trafilatura_is_too_short():
+def test_candidate_extraction_merges_siblings_and_prunes_related_blocks():
+    candidate_html = extract_best_candidate_html(SIBLING_HTML, min_chars=220)
+    assert candidate_html is not None
+
+    markdown = html_to_markdown(candidate_html)
+    assert "第一段正文" in markdown
+    assert "第四段正文" in markdown
+    assert "相关阅读" not in markdown
+
+
+def test_candidate_extraction_handles_missing_optional_attributes():
+    html = """
+    <html><body>
+      <article>
+        <h1>无属性正文容器</h1>
+        <p>第一段正文：发布会上介绍，系统会覆盖更多复杂交通场景，并提升长期运行稳定性。</p>
+        <p>第二段正文：研发团队表示，新版本将继续通过数据闭环优化安全策略与交互体验。</p>
+        <p>第三段正文：后续还会面向合作伙伴开放调试工具，帮助项目更快完成量产验证，并持续公开阶段性测试结果。</p>
+      </article>
+    </body></html>
+    """
+
+    candidate_html = extract_best_candidate_html(html, min_chars=100)
+
+    assert candidate_html is not None
+    markdown = html_to_markdown(candidate_html)
+    assert "系统会覆盖更多复杂交通场景" in markdown
+
+
+def test_requests_adapter_prefers_candidate_when_readability_is_too_short():
     response = Mock()
     response.raise_for_status.return_value = None
     response.url = "https://example.com/news/1"
@@ -60,9 +110,8 @@ def test_requests_adapter_uses_candidate_when_trafilatura_is_too_short():
     response.apparent_encoding = "utf-8"
     response.text = SAMPLE_HTML
 
-    fake_trafilatura = SimpleNamespace(extract=lambda *_args, **_kwargs: "简讯")
-    with patch.dict(sys.modules, {"trafilatura": fake_trafilatura}):
-        with patch("adapters.requests_adapter.requests.get", return_value=response):
+    with patch("adapters.requests_adapter.requests.get", return_value=response):
+        with patch("adapters.requests_adapter._readability_html", return_value="<div>简讯</div>"):
             article = RequestsAdapter(timeout=3, image_fail_open=False).extract("https://example.com/news/1")
 
     assert article is not None

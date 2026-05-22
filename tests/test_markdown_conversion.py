@@ -125,3 +125,39 @@ def test_clean_markdown_does_not_truncate_when_boundary_markers_appear_before_ar
     assert "评论" not in cleaned
     assert "热门推荐" not in cleaned
     assert "发表评论" not in cleaned
+
+
+def test_clean_markdown_normalizes_markdown_links_before_boundary_match():
+    raw = """
+    # 正文标题
+    这是正文第一段，包含关键背景。
+    这是正文第二段，包含更多信息。
+    [相关推荐](https://example.com/related)
+    这行是推荐区文案，不应该保留。
+    """
+
+    cleaned = clean_markdown(raw)
+
+    assert "这是正文第一段，包含关键背景。" in cleaned
+    assert "这是正文第二段，包含更多信息。" in cleaned
+    assert "相关推荐" not in cleaned
+    assert "推荐区文案" not in cleaned
+
+
+def test_clean_markdown_boundary_after_title_but_before_body_does_not_truncate_article():
+    raw = """
+    # 正文标题
+    [回首页看更多](https://example.com/)
+    热门推荐
+
+    正文第一段：这是实际内容起点，应该被保留。
+    正文第二段：这段内容也应该被保留。
+    """
+
+    cleaned = clean_markdown(raw)
+
+    assert "# 正文标题" in cleaned
+    assert "正文第一段：这是实际内容起点，应该被保留。" in cleaned
+    assert "正文第二段：这段内容也应该被保留。" in cleaned
+    assert "回首页看更多" not in cleaned
+    assert "热门推荐" not in cleaned

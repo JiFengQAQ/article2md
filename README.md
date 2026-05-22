@@ -1,17 +1,34 @@
 # article2md
 
-文章链接 -> Markdown 提取器。支持鸿蒙智行/AITO 社区内容，并通过 `requests + trafilatura + markdownify` 与 Playwright 兜底提取常见网页正文。
+文章链接 -> Markdown 提取器。面向“新闻详情页 / 博客文章 / 论坛长帖 / 常见 SPA 正文页”的泛用抽取，不做域名特判。
 
-通用网页提取新增“双兜底”策略（无域名特判）：
+## 架构（仅三类方案）
 
-- `readability` / `trafilatura` 结果质量不足时，自动从 HTML/渲染 DOM 中做候选正文容器打分提取。
-- 候选评分综合文本长度、段落数、正文标点/关键词、链接密度惩罚、导航/评论/推荐区域惩罚。
-- 适配新闻详情、博客文章、论坛长帖等常见页面结构。
+1. 鸿蒙智行社区内部 API
+- 命中 `omp.uopes.cn` 时，直接走社区接口提取结构化正文与媒体。
+
+2. 外部网站 DOM 主体 + markdownify（通用主路径）
+- 基于静态 HTML 做正文候选容器评分与噪声剪枝。
+- 评分综合：文本长度、段落/句子密度、中文标点密度、链接密度惩罚、导航/评论/推荐/分享/广告等负向惩罚。
+- 支持正文 sibling 合并，提升“正文分散在多个兄弟节点”的完整度。
+- 将候选 HTML 转为 Markdown，并统一做后处理清洗。
+
+3. 困难网站 Playwright 兜底
+- 对重前端渲染或静态抓取正文不足的页面，使用浏览器渲染后再走通用正文抽取链路。
+
+注：`readability` 仅作为可选辅助输入参与择优，不是独立方案。
 
 ## 安装
 
 ```bash
 pip install -r requirements.txt
+```
+
+可选（动态页兜底）：
+
+```bash
+pip install playwright readability-lxml
+playwright install chromium
 ```
 
 ## 使用
@@ -56,7 +73,7 @@ tests/
 - `markdown.py`: HTML -> Markdown、正文清洗、标题提取、质量校验。
 - `images.py`: 图片 URL 提取/规范化、Markdown 图片解析、尺寸解析、正文图过滤。
 - `adapters/*`: 平台适配器实现。
-  - `content_candidates.py`: 通用候选正文容器评分与质量判定，供 requests/playwright 共享。
+  - `content_candidates.py`: 通用候选正文容器评分、sibling 合并、噪声剪枝、Markdown 质量度量。
 
 ## 示例
 
@@ -73,12 +90,12 @@ python extractor.py "https://example.com/article" --image-fail-open
 
 ## 图文后处理规则
 
-三条提取路径（Huawei/Requests/Playwright）统一使用同一后处理流水线：
+三条提取路径统一走同一后处理流水线：
 
-1. 保留 Markdown 中已经按原文结构出现的图片，不再把孤儿图片追加到文末。
-2. 同时从 `images` 和 Markdown 图片引用中过滤 SVG/非正文图。
-3. 清理常见抽取噪音文本。
-4. 将 `Article.images` 同步为导出的 Markdown 中实际保留的图片引用，保证数量计数准确。
+1. 保留 Markdown 中按原文结构出现的图片，不把孤儿图片追加到文末。
+2. 从 `images` 与 Markdown 图片引用联合过滤 SVG/非正文图。
+3. 清理抽取噪音（空标题、评论区、相关推荐、返回首页、文明发言等后文边界）。
+4. 将 `Article.images` 同步为导出 Markdown 中实际保留的图片引用，保证数量计数准确。
 
 图片过滤规则：
 `(宽 >= 700 或 高 >= 700) 且 宽/高 ∈ (0,1) ∪ (1,3]`。
@@ -88,9 +105,9 @@ python extractor.py "https://example.com/article" --image-fail-open
 
 ## 能力与局限
 
-- 对常见正文页（`article/main/role=main` 或 `content/post/detail` 类容器）有较强泛化提取能力。
-- 对强登录墙、强反爬、纯视频页、重度聚合页仍可能只能拿到短文本或失败。
-- 若页面主体本身是短讯，输出长度会随源文长度而短，不会做站点特判补写。
+- 对常见正文页（新闻详情、博客文章、论坛长帖、常见 SPA 渲染正文）有较强泛化抽取能力。
+- 对强登录墙、强反爬、正文极度碎片化（跨 iframe/Shadow DOM）或高度交互聚合页，可能只能得到短文本或失败。
+- 本项目不做站点特判，不保证在每个站点都达到人工清洗质量。
 
 ## 扩展新平台
 
@@ -100,10 +117,3 @@ python extractor.py "https://example.com/article" --image-fail-open
 - `extract(url) -> Article | None`
 
 然后在 `extractor.py` 的 `ArticleExtractor.adapters` 中注册。
-
-## 可选 Playwright 兜底
-
-```bash
-pip install playwright readability-lxml
-playwright install chromium
-```

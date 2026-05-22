@@ -1,4 +1,4 @@
-"""Playwright + readability fallback adapter."""
+"""Playwright + generic DOM/readability fallback adapter."""
 
 from __future__ import annotations
 
@@ -6,11 +6,15 @@ import logging
 import time
 from typing import Any, Optional
 
-from adapters.content_candidates import extract_best_candidate_html, is_markdown_body_sufficient
+from adapters.base import PlatformAdapter
+from adapters.content_candidates import (
+    choose_best_markdown,
+    extract_best_candidate_html,
+    is_markdown_body_sufficient,
+)
 from images import _dedupe, _extract_images_from_html, _normalize_image_url, finalize_markdown_and_images
 from markdown import _is_captcha, best_title_from_html, html_to_markdown, is_quality_article
 from models import Article, DEFAULT_RETRIES, DEFAULT_TIMEOUT, IMAGE_DIMENSION_FAIL_OPEN, USER_AGENT
-from adapters.base import PlatformAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -91,18 +95,30 @@ class PlaywrightAdapter(PlatformAdapter):
             return None
 
         doc = Document(html)
-        article_html = doc.summary() or ""
-        markdown = html_to_markdown(article_html) if article_html else ""
+        readability_html = doc.summary() or ""
+        candidate_html = extract_best_candidate_html(html, min_chars=220) or ""
+
+        markdown_candidates: list[str] = []
+        if readability_html:
+            markdown_candidates.append(html_to_markdown(readability_html))
+        if candidate_html:
+            markdown_candidates.append(html_to_markdown(candidate_html))
+
+        markdown = choose_best_markdown(markdown_candidates, min_chars=220, min_paragraphs=3)
+        if not markdown and readability_html:
+            markdown = html_to_markdown(readability_html)
+        if not markdown and candidate_html:
+            markdown = html_to_markdown(candidate_html)
+
         if not is_markdown_body_sufficient(markdown, min_chars=220, min_paragraphs=3):
-            candidate_html = extract_best_candidate_html(html, min_chars=220)
-            if candidate_html:
-                article_html = candidate_html
-                markdown = html_to_markdown(article_html)
+            markdown = choose_best_markdown(markdown_candidates, min_chars=140, min_paragraphs=2) or markdown
+
         title = title or doc.title()
 
         images = _dedupe(
             rendered_images
-            + _extract_images_from_html(article_html, final_url)
+            + _extract_images_from_html(readability_html, final_url)
+            + _extract_images_from_html(candidate_html, final_url)
             + _extract_images_from_html(html, final_url)
         )
         markdown = finalize_markdown_and_images(

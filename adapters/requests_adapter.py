@@ -1,4 +1,4 @@
-"""Requests + trafilatura adapter."""
+"""Requests-based generic adapter for server-rendered article pages."""
 
 from __future__ import annotations
 
@@ -8,11 +8,15 @@ from typing import Optional
 
 import requests
 
-from adapters.content_candidates import extract_best_candidate_html, is_markdown_body_sufficient
+from adapters.base import PlatformAdapter
+from adapters.content_candidates import (
+    choose_best_markdown,
+    extract_best_candidate_html,
+    is_markdown_body_sufficient,
+)
 from images import _extract_images_from_html, finalize_markdown_and_images
 from markdown import _is_captcha, best_title_from_html, html_to_markdown, is_quality_article
 from models import Article, DEFAULT_TIMEOUT, IMAGE_DIMENSION_FAIL_OPEN
-from adapters.base import PlatformAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +30,21 @@ def _decoded_response_text(response: requests.Response) -> str:
     return response.text
 
 
+def _readability_html(html: str) -> str:
+    """Optional readability extraction for static pages."""
+    try:
+        from readability import Document
+    except ImportError:
+        return ""
+
+    try:
+        summary = Document(html or "").summary() or ""
+        return summary
+    except Exception as exc:
+        logger.info("readability extraction failed: %s", exc)
+        return ""
+
+
 class RequestsAdapter(PlatformAdapter):
     """Fast generic fallback for server-rendered pages."""
 
@@ -37,14 +56,6 @@ class RequestsAdapter(PlatformAdapter):
         return True
 
     def extract(self, url: str) -> Optional[Article]:
-        trafilatura_module = None
-        try:
-            import trafilatura
-
-            trafilatura_module = trafilatura
-        except ImportError:
-            logger.warning("trafilatura not installed, using static HTML candidate fallback")
-
         try:
             kwargs = self._request_kwargs()
             kwargs["timeout"] = self.timeout
@@ -62,29 +73,26 @@ class RequestsAdapter(PlatformAdapter):
             logger.warning("CAPTCHA / anti-bot page detected by requests: %s", final_url)
             return None
 
-        markdown = ""
-        if trafilatura_module:
-            try:
-                markdown = (
-                    trafilatura_module.extract(
-                        html,
-                        url=final_url,
-                        output_format="markdown",
-                        include_images=True,
-                        include_links=True,
-                        favor_recall=True,
-                    )
-                    or ""
-                )
-            except TypeError:
-                markdown = trafilatura_module.extract(html, url=final_url) or ""
-            except Exception as exc:
-                logger.info("trafilatura extraction failed: %s", exc)
+        markdown_candidates: list[str] = []
+
+        candidate_html = extract_best_candidate_html(html, min_chars=220)
+        if candidate_html:
+            markdown_candidates.append(html_to_markdown(candidate_html))
+
+        readability_html = _readability_html(html)
+        if readability_html:
+            markdown_candidates.append(html_to_markdown(readability_html))
+
+        markdown = choose_best_markdown(markdown_candidates, min_chars=220, min_paragraphs=3)
+
+        if not markdown and candidate_html:
+            markdown = html_to_markdown(candidate_html)
+        if not markdown and readability_html:
+            markdown = html_to_markdown(readability_html)
 
         if not is_markdown_body_sufficient(markdown, min_chars=220, min_paragraphs=3):
-            candidate_html = extract_best_candidate_html(html, min_chars=220)
-            if candidate_html:
-                markdown = html_to_markdown(candidate_html)
+            # Keep best effort output for short notices, then let final quality gate decide.
+            markdown = choose_best_markdown(markdown_candidates, min_chars=140, min_paragraphs=2)
 
         images = _extract_images_from_html(html, final_url)
         markdown = finalize_markdown_and_images(
