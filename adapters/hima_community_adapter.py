@@ -1,4 +1,4 @@
-"""Huawei / AITO community adapter."""
+"""HIMA / AITO community adapter."""
 
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ from adapters.base import PlatformAdapter
 logger = logging.getLogger(__name__)
 
 
-class HuaweiAutoAdapter(PlatformAdapter):
-    """Extract articles from Huawei/AITO community share pages."""
+class HimaCommunityAdapter(PlatformAdapter):
+    """Extract articles from HIMA/AITO community share pages."""
 
     API = "https://omp.uopes.cn/xcar/omp/xbs/cc/queryPostShareDetail"
 

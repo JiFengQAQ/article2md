@@ -57,7 +57,7 @@ adapters/
   __init__.py
   base.py
   content_candidates.py
-  huawei.py
+  hima_community_adapter.py
   requests_adapter.py
   playwright_adapter.py
 tests/
