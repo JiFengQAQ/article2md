@@ -16,8 +16,6 @@
 3. 困难网站 Playwright 兜底
 - 对重前端渲染或静态抓取正文不足的页面，使用浏览器渲染后再走通用正文抽取链路。
 
-注：`readability` 仅作为可选辅助输入参与择优，不是独立方案。
-
 ## 安装
 
 ```bash
@@ -27,7 +25,7 @@ pip install -r requirements.txt
 可选（动态页兜底）：
 
 ```bash
-pip install playwright readability-lxml
+pip install playwright
 playwright install chromium
 ```
 
@@ -98,7 +96,7 @@ python extractor.py "https://example.com/article" --image-fail-open
 4. 将 `Article.images` 同步为导出 Markdown 中实际保留的图片引用，保证数量计数准确。
 
 图片过滤规则：
-`(宽 >= 700 或 高 >= 700) 且 宽/高 ∈ (0,1) ∪ (1,3]`。
+`长边 >= 480 且 max(宽/高, 高/宽) <= 5`。
 
 - 未知尺寸默认 `fail-closed`（删除）。
 - `image_fail_open=True` 或 `--image-fail-open` 时改为保留未知尺寸图片。

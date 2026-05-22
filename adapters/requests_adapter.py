@@ -14,7 +14,7 @@ from adapters.content_candidates import (
     extract_best_candidate_html,
     is_markdown_body_sufficient,
 )
-from images import _extract_images_from_html, finalize_markdown_and_images
+from images import _extract_images_from_html, finalize_markdown_and_images, normalize_html_images
 from markdown import _is_captcha, best_title_from_html, html_to_markdown, is_quality_article
 from models import Article, DEFAULT_TIMEOUT, IMAGE_DIMENSION_FAIL_OPEN
 
@@ -30,19 +30,51 @@ def _decoded_response_text(response: requests.Response) -> str:
     return response.text
 
 
-def _readability_html(html: str) -> str:
-    """Optional readability extraction for static pages."""
-    try:
-        from readability import Document
-    except ImportError:
-        return ""
+def build_article_from_html(
+    *,
+    html: str,
+    final_url: str,
+    source_url: str,
+    image_fail_open: bool,
+    min_chars: int = 220,
+) -> Optional[Article]:
+    normalized_html = normalize_html_images(html, final_url)
+    title = best_title_from_html(normalized_html)
 
-    try:
-        summary = Document(html or "").summary() or ""
-        return summary
-    except Exception as exc:
-        logger.info("readability extraction failed: %s", exc)
-        return ""
+    markdown_candidates: list[str] = []
+    candidate_html = extract_best_candidate_html(normalized_html, min_chars=min_chars)
+    fallback_candidate_html = extract_best_candidate_html(normalized_html, min_chars=140) if not candidate_html else ""
+
+    if candidate_html:
+        markdown_candidates.append(html_to_markdown(candidate_html))
+    if fallback_candidate_html:
+        markdown_candidates.append(html_to_markdown(fallback_candidate_html))
+
+    markdown = choose_best_markdown(markdown_candidates, min_chars=min_chars, min_paragraphs=3)
+    if not markdown and candidate_html:
+        markdown = html_to_markdown(candidate_html)
+    if not markdown and fallback_candidate_html:
+        markdown = html_to_markdown(fallback_candidate_html)
+    if not markdown:
+        markdown = html_to_markdown(normalized_html)
+
+    if not is_markdown_body_sufficient(markdown, min_chars=min_chars, min_paragraphs=3):
+        markdown = choose_best_markdown(markdown_candidates or [markdown], min_chars=140, min_paragraphs=2) or markdown
+
+    images = _extract_images_from_html(normalized_html, final_url)
+    markdown = finalize_markdown_and_images(
+        markdown=markdown,
+        images=images,
+        base_url=final_url,
+        image_fail_open=image_fail_open,
+    )
+
+    return Article(
+        title=title or best_title_from_html(normalized_html, fallback=""),
+        source_url=source_url,
+        markdown=markdown,
+        images=images,
+    )
 
 
 class RequestsAdapter(PlatformAdapter):
@@ -67,48 +99,17 @@ class RequestsAdapter(PlatformAdapter):
             return None
 
         final_url = response.url or url
-        title = best_title_from_html(html)
         visible_hint = re.sub(r"<[^>]+>", " ", html[:20000])
-        if _is_captcha(title=title, text=visible_hint, url=final_url):
+        if _is_captcha(title=best_title_from_html(html), text=visible_hint, url=final_url):
             logger.warning("CAPTCHA / anti-bot page detected by requests: %s", final_url)
             return None
 
-        markdown_candidates: list[str] = []
-
-        candidate_html = extract_best_candidate_html(html, min_chars=220)
-        if candidate_html:
-            markdown_candidates.append(html_to_markdown(candidate_html))
-
-        readability_html = _readability_html(html)
-        if readability_html:
-            markdown_candidates.append(html_to_markdown(readability_html))
-
-        markdown = choose_best_markdown(markdown_candidates, min_chars=220, min_paragraphs=3)
-
-        if not markdown and candidate_html:
-            markdown = html_to_markdown(candidate_html)
-        if not markdown and readability_html:
-            markdown = html_to_markdown(readability_html)
-
-        if not is_markdown_body_sufficient(markdown, min_chars=220, min_paragraphs=3):
-            # Keep best effort output for short notices, then let final quality gate decide.
-            markdown = choose_best_markdown(markdown_candidates, min_chars=140, min_paragraphs=2)
-
-        images = _extract_images_from_html(html, final_url)
-        markdown = finalize_markdown_and_images(
-            markdown=markdown,
-            images=images,
-            base_url=final_url,
+        article = build_article_from_html(
+            html=html,
+            final_url=final_url,
+            source_url=url,
             image_fail_open=self.image_fail_open,
         )
-
-        article = Article(
-            title=title or best_title_from_html(html, fallback=""),
-            source_url=url,
-            markdown=markdown,
-            images=images,
-        )
-
-        if is_quality_article(article, min_chars=200):
+        if article and is_quality_article(article, min_chars=200):
             return article
         return None

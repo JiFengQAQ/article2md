@@ -23,6 +23,22 @@ from models import (
 )
 
 logger = logging.getLogger(__name__)
+_INVALID_IMAGE_SCHEMES = ("data:", "blob:", "javascript:")
+_PLACEHOLDER_IMAGE_HINTS = (
+    "placeholder",
+    "spacer",
+    "blank",
+    "lazyload",
+    "loading",
+    "default",
+    "pixel",
+    "tracker",
+    "transparent",
+    "1x1",
+    "t.png",
+    "t.gif",
+)
+_MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(\s*([^)\s]+)(\s+['\"][^)]*['\"])?\s*\)")
 
 
 def _dedupe(items: list[str]) -> list[str]:
@@ -37,24 +53,120 @@ def _dedupe(items: list[str]) -> list[str]:
 
 def _normalize_image_url(src: str, base_url: str) -> str:
     src = (src or "").strip().strip('"\'')
-    if not src or src.startswith(("data:", "blob:", "javascript:")):
+    if not src or src.lower().startswith(_INVALID_IMAGE_SCHEMES):
         return ""
     return urljoin(base_url, src)
 
 
+def _looks_like_placeholder_image_url(url: str) -> bool:
+    parsed = urlparse(url or "")
+    path = (parsed.path or "").lower()
+    query = (parsed.query or "").lower()
+    fragment = (parsed.fragment or "").lower()
+    whole = f"{path}?{query}#{fragment}"
+    if not path:
+        return True
+    return any(hint in whole for hint in _PLACEHOLDER_IMAGE_HINTS)
+
+
+def _choose_largest_srcset_candidate(srcset: str) -> str:
+    best_url = ""
+    best_score = float("-inf")
+    for item in (srcset or "").split(","):
+        part = item.strip()
+        if not part:
+            continue
+        pieces = part.split()
+        url = pieces[0].strip()
+        descriptor = pieces[1].strip().lower() if len(pieces) > 1 else ""
+        score = 0.0
+        if descriptor.endswith("w"):
+            try:
+                score = float(descriptor[:-1])
+            except ValueError:
+                score = 0.0
+        elif descriptor.endswith("x"):
+            try:
+                score = float(descriptor[:-1]) * 1000.0
+            except ValueError:
+                score = 0.0
+        if score > best_score:
+            best_score = score
+            best_url = url
+    return best_url
+
+
+def _valid_candidate_urls(img: object, base_url: str) -> list[str]:
+    raw_candidates: list[str] = []
+    for attr in ("srcset", "data-srcset"):
+        srcset = img.get(attr)
+        if srcset:
+            srcset_url = _choose_largest_srcset_candidate(srcset)
+            if srcset_url:
+                raw_candidates.append(srcset_url)
+
+    for attr in ("src", "data-src", "data-original", "data-lazy-src", "data-actualsrc", "poster"):
+        value = img.get(attr)
+        if value:
+            raw_candidates.append(value)
+
+    normalized_candidates: list[str] = []
+    for raw in raw_candidates:
+        url = _normalize_image_url(raw, base_url)
+        if not url or _looks_like_placeholder_image_url(url):
+            continue
+        normalized_candidates.append(url)
+    return _dedupe(normalized_candidates)
+
+
+def normalize_html_images(html: str, base_url: str) -> str:
+    """Normalize img elements: fill reliable src, absolutize, and drop invalid placeholders."""
+    if not html:
+        return ""
+
+    try:
+        from lxml import html as lxml_html
+    except Exception:
+        return html
+
+    try:
+        root = lxml_html.fromstring(html)
+    except Exception:
+        return html
+
+    for img in list(root.xpath(".//img")):
+        candidates = _valid_candidate_urls(img, base_url)
+        if not candidates:
+            parent = img.getparent()
+            if parent is not None:
+                parent.remove(img)
+            continue
+        img.set("src", candidates[0])
+
+    return lxml_html.tostring(root, encoding="unicode", method="html")
+
+
 def _extract_images_from_html(html: str, base_url: str) -> list[str]:
+    if not html:
+        return []
+
+    normalized_html = normalize_html_images(html, base_url)
+    try:
+        from lxml import html as lxml_html
+    except Exception:
+        return []
+
+    try:
+        root = lxml_html.fromstring(normalized_html)
+    except Exception:
+        return []
+
     images: list[str] = []
-    for match in re.finditer(r"<img\b[^>]*>", html or "", flags=re.IGNORECASE):
-        tag = match.group(0)
-        src = ""
-        for attr in ("src", "data-src", "data-original", "data-lazy-src", "srcset", "data-srcset"):
-            found = re.search(rf'{attr}\s*=\s*["\']([^"\']+)["\']', tag, flags=re.IGNORECASE)
-            if found:
-                src = found.group(1).split(",")[0].strip().split(" ")[0]
-                break
-        url = _normalize_image_url(src, base_url)
-        if url:
-            images.append(url)
+    for img in root.xpath(".//img"):
+        src = (img.get("src") or "").strip()
+        normalized = _normalize_image_url(src, base_url)
+        if normalized and not _is_svg_url(normalized):
+            images.append(normalized)
     return _dedupe(images)
 
 
@@ -72,6 +184,19 @@ def _normalize_markdown_image_url(url: str, base_url: str = "") -> str:
     if base_url:
         return _normalize_image_url(url, base_url)
     return (url or "").strip().strip("<>").strip()
+
+
+def _absolutize_markdown_image_urls(markdown: str, base_url: str = "") -> str:
+    def _replace(match: re.Match[str]) -> str:
+        alt_text = match.group(1)
+        raw_url = match.group(2)
+        title_part = match.group(3) or ""
+        normalized = _normalize_markdown_image_url(raw_url, base_url=base_url)
+        if not normalized or _is_svg_url(normalized):
+            return ""
+        return f"![{alt_text}]({normalized}{title_part})"
+
+    return _MARKDOWN_IMAGE_RE.sub(_replace, markdown or "")
 
 
 def _sync_images_to_markdown(markdown: str, images: list[str], base_url: str = "") -> None:
@@ -250,15 +375,16 @@ def _is_content_image_dimensions(
     min_long_side: int = IMAGE_DIMENSION_MIN_LONG_SIDE,
     max_aspect_ratio: float = IMAGE_ASPECT_RATIO_MAX,
 ) -> bool:
-    """Keep likely article images: large enough and not square/ultra-wide."""
+    """Keep likely article images: large enough and not extremely elongated."""
     width, height = dimensions
     if width <= 0 or height <= 0:
         return False
-    ratio = width / height
-    return (
-        (width >= min_long_side or height >= min_long_side)
-        and ((0 < ratio < 1) or (1 < ratio <= max_aspect_ratio))
-    )
+    long_side = max(width, height)
+    short_side = min(width, height)
+    if short_side <= 0:
+        return False
+    ratio = long_side / short_side
+    return long_side >= min_long_side and ratio <= max_aspect_ratio
 
 
 def _strip_svg_and_non_content(
@@ -275,10 +401,12 @@ def _strip_svg_and_non_content(
 
     markdown_urls = _markdown_image_urls(markdown)
     normalized_markdown_urls = [_normalize_markdown_image_url(url, base_url) for url in markdown_urls]
-    candidates = _dedupe(images + normalized_markdown_urls)
+    normalized_images = [_normalize_image_url(url, base_url) for url in images]
+    candidates = _dedupe([url for url in (normalized_images + normalized_markdown_urls) if url])
 
     filtered_urls = {url for url in candidates if _is_svg_url(url)}
     filtered_urls.update(url for url in markdown_urls if _is_svg_url(url))
+    filtered_urls.update(url for url in markdown_urls if not _normalize_markdown_image_url(url, base_url=base_url))
 
     probe_urls = [
         url
@@ -327,7 +455,8 @@ def finalize_markdown_and_images(
     """Shared adapter post-processing pipeline."""
     from markdown import clean_markdown
 
-    images[:] = _dedupe(images)
+    images[:] = _dedupe([url for url in (_normalize_image_url(item, base_url) for item in images) if url])
+    markdown = _absolutize_markdown_image_urls(markdown, base_url=base_url)
     markdown = _strip_svg_and_non_content(
         markdown,
         images,

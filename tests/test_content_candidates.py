@@ -1,7 +1,14 @@
+from pathlib import Path
 from unittest.mock import Mock, patch
 
-from adapters.content_candidates import extract_best_candidate_html
+from adapters.content_candidates import (
+    _attr_blob,
+    _serialize_candidate,
+    _serialize_node_group,
+    extract_best_candidate_html,
+)
 from adapters.playwright_adapter import PlaywrightAdapter
+from adapters.requests_adapter import build_article_from_html
 from adapters.requests_adapter import RequestsAdapter
 from markdown import html_to_markdown
 
@@ -102,7 +109,87 @@ def test_candidate_extraction_handles_missing_optional_attributes():
     assert "系统会覆盖更多复杂交通场景" in markdown
 
 
-def test_requests_adapter_prefers_candidate_when_readability_is_too_short():
+def test_attr_blob_handles_none_list_and_tuple_without_repr_noise():
+    class _FakeNode:
+        def __init__(self, attrs):
+            self._attrs = attrs
+
+        def get(self, key):
+            return self._attrs.get(key)
+
+    node = _FakeNode(
+        {
+            "id": None,
+            "class": ["Article", "Main"],
+            "role": ("content", "primary"),
+            "itemprop": "articleBody",
+            "data-role": None,
+            "aria-label": ("正文",),
+            "aria-labelledby": ["Title", None, "Lead"],
+        }
+    )
+    blob = _attr_blob(node)
+    assert "['article', 'main']" not in blob
+    assert "('content', 'primary')" not in blob
+    assert "article main" in blob
+    assert "content primary" in blob
+    assert "articlebody" in blob
+    assert "正文" in blob
+    assert "title lead" in blob
+
+
+def test_serialize_candidate_prunes_always_removed_tags():
+    from lxml import html as lxml_html
+
+    html = """
+    <html><body>
+      <article class="content">
+        <style>.x{color:red}</style>
+        <script>console.log("x")</script>
+        <noscript>noscript text</noscript>
+        <template><div>tmpl</div></template>
+        <svg><text>vector</text></svg>
+        <canvas>canvas text</canvas>
+        <iframe src="/embed"></iframe>
+        <p>正文段落保留</p>
+      </article>
+    </body></html>
+    """
+    root = lxml_html.fromstring(html)
+    article = root.xpath("//article")[0]
+    serialized = _serialize_candidate(article, lxml_html)
+    assert "<style" not in serialized
+    assert "<script" not in serialized
+    assert "<noscript" not in serialized
+    assert "<template" not in serialized
+    assert "<svg" not in serialized
+    assert "<canvas" not in serialized
+    assert "<iframe" not in serialized
+    assert "正文段落保留" in serialized
+
+
+def test_serialize_node_group_prunes_always_removed_tags():
+    from lxml import html as lxml_html
+
+    html = """
+    <html><body>
+      <div class="group">
+        <section><p>第一段正文</p><style>.a{}</style></section>
+        <section><p>第二段正文</p><script>bad()</script><iframe src="/x"></iframe></section>
+      </div>
+    </body></html>
+    """
+    root = lxml_html.fromstring(html)
+    nodes = root.xpath("//div[@class='group']/section")
+    serialized = _serialize_node_group(nodes, lxml_html)
+    assert "<style" not in serialized
+    assert "<script" not in serialized
+    assert "<iframe" not in serialized
+    assert "第一段正文" in serialized
+    assert "第二段正文" in serialized
+
+
+def test_requests_adapter_uses_dom_candidate_main_path():
     response = Mock()
     response.raise_for_status.return_value = None
     response.url = "https://example.com/news/1"
@@ -111,14 +198,48 @@ def test_requests_adapter_prefers_candidate_when_readability_is_too_short():
     response.text = SAMPLE_HTML
 
     with patch("adapters.requests_adapter.requests.get", return_value=response):
-        with patch("adapters.requests_adapter._readability_html", return_value="<div>简讯</div>"):
-            article = RequestsAdapter(timeout=3, image_fail_open=False).extract("https://example.com/news/1")
+        article = RequestsAdapter(timeout=3, image_fail_open=False).extract("https://example.com/news/1")
 
     assert article is not None
     assert "进入大规模验证阶段" in article.markdown
     assert "工具链" in article.markdown
     assert "热门推荐" not in article.markdown
     assert "评论区" not in article.markdown
+
+
+def test_requests_adapter_source_does_not_use_trafilatura_main_path():
+    source_file = Path(__file__).resolve().parents[1] / "adapters" / "requests_adapter.py"
+    source = source_file.read_text(encoding="utf-8").lower()
+    assert "trafilatura" not in source
+
+
+def test_requests_adapter_normalizes_lazy_images_and_exports_absolute_markdown_urls():
+    html = """
+    <html><body>
+      <article class="news-detail content-body">
+        <h1>测试标题</h1>
+        <p>第一段正文：发布会披露了大量技术细节，并在多地场景完成验证，具备稳定的量产交付能力，现场还展示了多个复杂工况样例，覆盖城市道路、快速路和泊车等高频场景，强调长期可靠性与安全冗余。</p>
+        <p>第二段正文：团队强调会持续优化算法、硬件协同与工程流程，提升复杂路况下的安全冗余与体验，同时会以阶段性版本持续开放调试信息，帮助开发者定位问题、复现缺陷并验证修复策略。</p>
+        <p>第三段正文：后续版本还将开放更多调试接口，为合作伙伴提供更高效的接入与验证工具，并通过统一的质量度量体系跟踪性能变化，公开关键测试维度与回归流程，保证升级过程可追溯。</p>
+        <img src="" data-src="/assets/cover.jpg" alt="配图">
+      </article>
+    </body></html>
+    """
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.url = "https://example.com/news/100"
+    response.encoding = "utf-8"
+    response.apparent_encoding = "utf-8"
+    response.text = html
+
+    with patch("adapters.requests_adapter.requests.get", return_value=response):
+        with patch("images._fetch_image_dimensions", return_value=(1280, 720)):
+            article = RequestsAdapter(timeout=3, image_fail_open=False).extract("https://example.com/news/100")
+
+    assert article is not None
+    assert "(https://example.com/assets/cover.jpg)" in article.markdown
+    assert "![](/assets/cover.jpg)" not in article.markdown
+    assert article.images == ["https://example.com/assets/cover.jpg"]
 
 
 class _FakeLocator:
@@ -204,29 +325,20 @@ def _fake_sync_playwright():
     return _FakePlaywrightContext(SAMPLE_HTML, "https://example.com/news/1")
 
 
-class _FakeReadabilityDocument:
-    def __init__(self, html: str):
-        self._html = html
-
-    def summary(self) -> str:
-        _ = self._html
-        return "<div>简讯</div>"
-
-    def title(self) -> str:
-        return "readability-title"
-
-
-def test_playwright_adapter_uses_candidate_when_readability_is_too_short():
+def test_playwright_adapter_reuses_dom_candidate_pipeline_with_rendered_html():
     adapter = PlaywrightAdapter(timeout=3, retries=0, image_fail_open=False)
-    article = adapter._extract_once(
-        "https://example.com/news/1",
-        Document=_FakeReadabilityDocument,
-        sync_playwright=_fake_sync_playwright,
-        budget=3,
-    )
+    with patch("adapters.playwright_adapter.build_article_from_html", wraps=build_article_from_html) as patched_pipeline:
+        article = adapter._extract_once(
+            "https://example.com/news/1",
+            sync_playwright=_fake_sync_playwright,
+            budget=3,
+        )
 
     assert article is not None
     assert "进入大规模验证阶段" in article.markdown
     assert "工具链" in article.markdown
     assert "热门推荐" not in article.markdown
     assert "评论区" not in article.markdown
+    patched_pipeline.assert_called()
+    call_html = patched_pipeline.call_args.kwargs["html"]
+    assert "news-detail content-body article-content" in call_html

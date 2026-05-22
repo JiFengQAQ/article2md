@@ -17,8 +17,8 @@ DEFAULT_REQUEST_HEADERS = {
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
 }
 
-IMAGE_DIMENSION_MIN_LONG_SIDE = 700
-IMAGE_ASPECT_RATIO_MAX = 3.0
+IMAGE_DIMENSION_MIN_LONG_SIDE = 480
+IMAGE_ASPECT_RATIO_MAX = 5.0
 IMAGE_DIMENSION_BYTE_CAP = 512 * 1024
 IMAGE_DIMENSION_WORKERS = 8
 IMAGE_DIMENSION_TIMEOUT = (3.05, 3)
@@ -32,6 +32,10 @@ CAPTCHA_PATTERNS = (
     "captcha",
     "anti-bot",
     "人机验证",
+    "byted_acrawler",
+    "__ac_signature",
+    "__ac_nonce",
+    "window.location.reload",
 )
 
 BOILERPLATE_PATTERNS = (

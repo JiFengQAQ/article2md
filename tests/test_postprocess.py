@@ -61,10 +61,11 @@ def test_finalize_markdown_and_images_counts_only_exported_markdown_images():
             image_fail_open=False,
         )
 
-    markdown_image_count = len(re.findall(r"!\[[^\]]*\]\([^\)]+\)", final_markdown))
+    markdown_image_urls = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", final_markdown)
+    markdown_image_unique = {url.strip() for url in markdown_image_urls}
     assert "orphan.jpg" not in final_markdown
     assert images == [
         "https://example.com/img/first.jpg",
         "https://example.com/img/second.jpg",
     ]
-    assert len(images) == markdown_image_count == 2
+    assert len(images) == len(markdown_image_unique) == 2

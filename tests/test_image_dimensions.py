@@ -1,6 +1,7 @@
 import struct
 
 from images import _is_content_image_dimensions, _parse_image_dimensions
+from models import IMAGE_ASPECT_RATIO_MAX, IMAGE_DIMENSION_MIN_LONG_SIDE
 
 
 def _png_bytes(width: int, height: int) -> bytes:
@@ -54,8 +55,18 @@ def test_parse_dimensions_jpeg():
 
 
 def test_content_image_dimension_rule():
-    assert _is_content_image_dimensions((900, 450), min_long_side=700, max_aspect_ratio=3)
-    assert _is_content_image_dimensions((500, 700), min_long_side=700, max_aspect_ratio=3)
-    assert not _is_content_image_dimensions((699, 500), min_long_side=700, max_aspect_ratio=3)
-    assert not _is_content_image_dimensions((700, 700), min_long_side=700, max_aspect_ratio=3)
-    assert not _is_content_image_dimensions((1600, 400), min_long_side=700, max_aspect_ratio=3)
+    assert _is_content_image_dimensions((480, 360), min_long_side=480, max_aspect_ratio=5)
+    assert _is_content_image_dimensions((640, 427), min_long_side=480, max_aspect_ratio=5)
+    assert _is_content_image_dimensions((660, 310), min_long_side=480, max_aspect_ratio=5)
+    assert _is_content_image_dimensions((660, 372), min_long_side=480, max_aspect_ratio=5)
+    assert _is_content_image_dimensions((744, 3050), min_long_side=480, max_aspect_ratio=5)
+    assert _is_content_image_dimensions((3050, 744), min_long_side=480, max_aspect_ratio=5)
+    assert _is_content_image_dimensions((700, 700), min_long_side=480, max_aspect_ratio=5)
+
+    assert not _is_content_image_dimensions((479, 300), min_long_side=480, max_aspect_ratio=5)
+    assert not _is_content_image_dimensions((3000, 500), min_long_side=480, max_aspect_ratio=5)
+
+
+def test_default_image_threshold_constants():
+    assert IMAGE_DIMENSION_MIN_LONG_SIDE == 480
+    assert IMAGE_ASPECT_RATIO_MAX == 5.0

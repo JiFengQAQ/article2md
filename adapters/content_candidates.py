@@ -30,6 +30,7 @@ _HARD_PRUNE_TAGS = {
     "textarea",
     "iframe",
 }
+_ALWAYS_PRUNE_TAGS = {"script", "style", "noscript", "template", "svg", "canvas", "iframe"}
 
 _POSITIVE_ATTR_HINTS = (
     "article",
@@ -124,6 +125,19 @@ def _char_count(text: str) -> int:
 
 
 def _attr_blob(node: Any) -> str:
+    def _iter_attr_tokens(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple)):
+            tokens: list[str] = []
+            for item in value:
+                tokens.extend(_iter_attr_tokens(item))
+            return tokens
+        text = str(value).strip()
+        if not text:
+            return []
+        return [text]
+
     attrs = (
         node.get("id"),
         node.get("class"),
@@ -133,7 +147,10 @@ def _attr_blob(node: Any) -> str:
         node.get("aria-label"),
         node.get("aria-labelledby"),
     )
-    return " ".join(str(attr) for attr in attrs if attr).lower()
+    tokens: list[str] = []
+    for attr in attrs:
+        tokens.extend(_iter_attr_tokens(attr))
+    return " ".join(tokens).lower()
 
 
 def _tag_name(node: Any) -> str:
@@ -394,6 +411,11 @@ def _should_prune_noise(node: Any) -> bool:
 def _prune_candidate_tree(node: Any) -> Any:
     cleaned = deepcopy(node)
     for descendant in list(cleaned.iterdescendants()):
+        if _tag_name(descendant) in _ALWAYS_PRUNE_TAGS:
+            parent = descendant.getparent()
+            if parent is not None:
+                parent.remove(descendant)
+            continue
         if not _should_prune_noise(descendant):
             continue
         parent = descendant.getparent()

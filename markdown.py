@@ -19,6 +19,16 @@ _POST_ARTICLE_BOUNDARY_PATTERNS = (
     re.compile(r"^(?:返回首页|回到首页|回首页看更多|返回频道|返回列表).*$"),
     re.compile(r"^(?:文明上网理性发言|理性发言.*|请遵守.*评论.*协议.*)$"),
 )
+_CSS_SELECTOR_LINE_RE = re.compile(
+    r"^\s*(?:"
+    r"[.#][\w\-\s>+~:,.\[\]='\"()]+"
+    r"|[a-z][\w\-]*(?:[\s>+~:.#\[\]='\"()\-]+[a-z0-9_\-:#\[\]='\"()]+)*"
+    r")\s*\{",
+    re.IGNORECASE,
+)
+_CSS_AT_RULE_RE = re.compile(r"^\s*@(?:media|supports|keyframes|font-face|layer|container)\b", re.IGNORECASE)
+_CSS_ROOT_RE = re.compile(r"^\s*:root\s*\{", re.IGNORECASE)
+_CSS_PROP_LINE_RE = re.compile(r"^\s*(?:--[a-z0-9\-_]+|[a-z\-]+)\s*:\s*[^:]+;?\s*$", re.IGNORECASE)
 
 
 def _normalize_markdown(markdown: str) -> str:
@@ -96,6 +106,49 @@ def _is_body_content_line(line: str) -> bool:
     return False
 
 
+def _is_substantive_article_body_line(line: str) -> bool:
+    stripped = line.strip()
+    if not _is_body_content_line(stripped):
+        return False
+    if stripped.startswith("#"):
+        return False
+    text = _line_text_for_matching(stripped)
+    compact = re.sub(r"\s+", "", text)
+    if re.match(r"^\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}", compact):
+        return False
+    if re.match(r"^(?:来源|作者|责编|编辑|发布于|发布时间|责任编辑)[:：]", text):
+        return False
+    if _is_post_article_boundary(stripped):
+        return False
+    if re.match(r"^!\[[^\]]*\]\([^)]+\)$", stripped):
+        return False
+    return True
+
+
+def _looks_like_css_block_start(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("# "):
+        return False
+    if _CSS_AT_RULE_RE.match(stripped) or _CSS_ROOT_RE.match(stripped):
+        return "{" in stripped
+    if _CSS_SELECTOR_LINE_RE.match(stripped):
+        return "{" in stripped
+    return False
+
+
+def _looks_like_css_inline_rule(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("# "):
+        return False
+    if _CSS_ROOT_RE.match(stripped):
+        return True
+    if _CSS_AT_RULE_RE.match(stripped):
+        return "{" in stripped and "}" in stripped
+    if _CSS_SELECTOR_LINE_RE.match(stripped):
+        return "}" in stripped and ":" in stripped
+    return False
+
+
 def clean_markdown(markdown: str) -> str:
     """Remove extraction boilerplate while preserving paragraph layout."""
     if not markdown:
@@ -104,9 +157,24 @@ def clean_markdown(markdown: str) -> str:
     lines: list[str] = []
     previous_blank = False
     body_started = False
+    css_block_depth = 0
 
     for line in markdown.replace("\r\n", "\n").split("\n"):
         stripped = line.strip()
+
+        if css_block_depth > 0:
+            css_block_depth += line.count("{") - line.count("}")
+            if css_block_depth <= 0:
+                css_block_depth = 0
+            continue
+        if _looks_like_css_inline_rule(stripped):
+            continue
+        if _looks_like_css_block_start(stripped):
+            css_block_depth = max(1, line.count("{") - line.count("}"))
+            continue
+        if _CSS_PROP_LINE_RE.match(stripped) and stripped.endswith(";"):
+            continue
+
         if _EMPTY_HEADING_PATTERN.match(stripped):
             continue
         if any(re.search(pattern, stripped, re.IGNORECASE) for pattern in BOILERPLATE_PATTERNS):
@@ -124,7 +192,7 @@ def clean_markdown(markdown: str) -> str:
             continue
 
         lines.append(line.rstrip())
-        if _is_body_content_line(line):
+        if _is_substantive_article_body_line(line):
             body_started = True
         previous_blank = False
 
@@ -169,8 +237,8 @@ def best_title_from_html(html: str, fallback: str = "") -> str:
         r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
         r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']',
         r'<meta[^>]+name=["\']twitter:title["\'][^>]+content=["\']([^"\']+)["\']',
-        r"<h1\\b[^>]*>(.*?)</h1>",
-        r"<title\\b[^>]*>(.*?)</title>",
+        r"<h1\b[^>]*>(.*?)</h1>",
+        r"<title\b[^>]*>(.*?)</title>",
     )
     for pattern in patterns:
         match = re.search(pattern, html or "", flags=re.IGNORECASE | re.DOTALL)

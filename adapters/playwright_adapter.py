@@ -1,4 +1,4 @@
-"""Playwright + generic DOM/readability fallback adapter."""
+"""Playwright renderer adapter that reuses the generic DOM extraction pipeline."""
 
 from __future__ import annotations
 
@@ -7,13 +7,8 @@ import time
 from typing import Any, Optional
 
 from adapters.base import PlatformAdapter
-from adapters.content_candidates import (
-    choose_best_markdown,
-    extract_best_candidate_html,
-    is_markdown_body_sufficient,
-)
-from images import _dedupe, _extract_images_from_html, _normalize_image_url, finalize_markdown_and_images
-from markdown import _is_captcha, best_title_from_html, html_to_markdown, is_quality_article
+from markdown import _is_captcha, best_title_from_html, is_quality_article
+from adapters.requests_adapter import build_article_from_html
 from models import Article, DEFAULT_RETRIES, DEFAULT_TIMEOUT, IMAGE_DIMENSION_FAIL_OPEN, USER_AGENT
 
 logger = logging.getLogger(__name__)
@@ -37,10 +32,9 @@ class PlaywrightAdapter(PlatformAdapter):
 
     def extract(self, url: str) -> Optional[Article]:
         try:
-            from readability import Document
             from playwright.sync_api import sync_playwright
         except ImportError:
-            logger.warning("Playwright / readability-lxml not installed, cannot fallback")
+            logger.warning("Playwright not installed, cannot fallback")
             return None
 
         deadline = time.monotonic() + max(1, self.timeout)
@@ -52,8 +46,8 @@ class PlaywrightAdapter(PlatformAdapter):
             if remaining <= 0:
                 break
             try:
-                article = self._extract_once(url, Document, sync_playwright, remaining)
-                if is_quality_article(article):
+                article = self._extract_once(url, sync_playwright, remaining)
+                if article and is_quality_article(article, min_chars=200):
                     return article
                 logger.info("Playwright extraction failed quality validation: %s", url)
             except Exception as exc:
@@ -69,7 +63,7 @@ class PlaywrightAdapter(PlatformAdapter):
             logger.error("Playwright browser failed: %s", last_error)
         return None
 
-    def _extract_once(self, url: str, Document: Any, sync_playwright: Any, budget: float) -> Optional[Article]:
+    def _extract_once(self, url: str, sync_playwright: Any, budget: float) -> Optional[Article]:
         timeout_ms = max(1000, int(min(budget, self.timeout) * 1000))
 
         with sync_playwright() as playwright:
@@ -87,53 +81,22 @@ class PlaywrightAdapter(PlatformAdapter):
             title = self._page_title(page, html)
             final_url = page.url
             text = page.locator("body").inner_text(timeout=1000) if page.locator("body").count() else ""
-            rendered_images = self._rendered_images(page, final_url)
             browser.close()
 
         if _is_captcha(title=title, text=text, url=final_url):
             logger.warning("CAPTCHA / anti-bot page detected by Playwright: %s", final_url)
             return None
 
-        doc = Document(html)
-        readability_html = doc.summary() or ""
-        candidate_html = extract_best_candidate_html(html, min_chars=220) or ""
-
-        markdown_candidates: list[str] = []
-        if readability_html:
-            markdown_candidates.append(html_to_markdown(readability_html))
-        if candidate_html:
-            markdown_candidates.append(html_to_markdown(candidate_html))
-
-        markdown = choose_best_markdown(markdown_candidates, min_chars=220, min_paragraphs=3)
-        if not markdown and readability_html:
-            markdown = html_to_markdown(readability_html)
-        if not markdown and candidate_html:
-            markdown = html_to_markdown(candidate_html)
-
-        if not is_markdown_body_sufficient(markdown, min_chars=220, min_paragraphs=3):
-            markdown = choose_best_markdown(markdown_candidates, min_chars=140, min_paragraphs=2) or markdown
-
-        title = title or doc.title()
-
-        images = _dedupe(
-            rendered_images
-            + _extract_images_from_html(readability_html, final_url)
-            + _extract_images_from_html(candidate_html, final_url)
-            + _extract_images_from_html(html, final_url)
-        )
-        markdown = finalize_markdown_and_images(
-            markdown=markdown,
-            images=images,
-            base_url=final_url,
+        article = build_article_from_html(
+            html=html,
+            final_url=final_url,
+            source_url=url,
             image_fail_open=self.image_fail_open,
         )
-
-        return Article(
-            title=title,
-            source_url=url,
-            markdown=markdown,
-            images=images,
-        )
+        if not article:
+            return None
+        article.title = (title or article.title).strip()
+        return article
 
     @staticmethod
     def _wait_for_article_or_scroll(page: Any) -> None:
@@ -167,15 +130,3 @@ class PlaywrightAdapter(PlatformAdapter):
         except Exception:
             title = ""
         return (title or best_title_from_html(html)).strip()
-
-    @staticmethod
-    def _rendered_images(page: Any, base_url: str) -> list[str]:
-        try:
-            images = page.evaluate(
-                """() => Array.from(
-                    document.querySelectorAll('article img, .content img, .article img, main img, p img')
-                ).map(img => img.currentSrc || img.src || img.dataset.src || img.dataset.original || '')"""
-            )
-        except Exception:
-            images = []
-        return _dedupe([_normalize_image_url(src, base_url) for src in images])

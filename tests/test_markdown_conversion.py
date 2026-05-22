@@ -48,6 +48,13 @@ def test_html_to_markdown_reasonably_preserves_lists_and_preformatted_code():
     assert ("```" in markdown) or re.search(r"(?m)^\s{4}def add\(a, b\):", markdown)
 
 
+def test_best_title_from_html_reads_h1_and_title_tags():
+    from markdown import best_title_from_html
+
+    assert best_title_from_html("<html><body><h1>正文标题</h1></body></html>") == "正文标题"
+    assert best_title_from_html("<html><head><title>页面标题</title></head></html>") == "页面标题"
+
+
 def test_markdown_module_has_no_html2text_import():
     markdown_file = Path(__file__).resolve().parents[1] / "markdown.py"
     tree = ast.parse(markdown_file.read_text(encoding="utf-8"), filename=str(markdown_file))
@@ -161,3 +168,69 @@ def test_clean_markdown_boundary_after_title_but_before_body_does_not_truncate_a
     assert "正文第二段：这段内容也应该被保留。" in cleaned
     assert "回首页看更多" not in cleaned
     assert "热门推荐" not in cleaned
+
+
+def test_clean_markdown_comment_link_before_body_does_not_truncate_article():
+    raw = """
+    # 上市 13 天，鸿蒙智行首款旅行车享界 S9T 大定突破 15000 台
+
+    2025/9/30 9:15:12
+    来源：[IT之家](https://www.ithome.com/0/886/797.htm)
+    作者：**远洋**
+    责编：**远洋**
+
+    [评论：](#post_comm)
+
+    感谢IT之家网友提供线索。
+
+    IT之家 9 月 30 日消息，9 月 16 日，鸿蒙智行首款旅行车享界 S9T 正式上市，售价 30.98 万元起。上市 13 天大定已突破 15000 台。
+
+    享界 S9T 首批搭载 ADS4，全系标配全维感知系统、全新一代华为途灵平台、华为悦彰音响卓越系列、鸿蒙 ALPS 健康座舱等华为黑科技。
+
+    相关阅读：
+    这行推荐阅读不该保留。
+    """
+
+    cleaned = clean_markdown(raw)
+
+    assert "IT之家 9 月 30 日消息" in cleaned
+    assert "享界 S9T 首批搭载 ADS4" in cleaned
+    assert "[评论：]" not in cleaned
+    assert "推荐阅读不该保留" not in cleaned
+
+
+def test_is_quality_article_rejects_generic_antibot_javascript_payload():
+    from markdown import is_quality_article
+    from models import Article
+
+    article = Article(
+        title="访问验证",
+        source_url="https://example.com/article/1",
+        markdown="var glb; window.byted_acrawler.init({aid:99999999}); var __ac_signature = window.byted_acrawler.sign('','nonce'); window.location.reload();",
+    )
+
+    assert not is_quality_article(article, min_chars=20)
+
+
+def test_clean_markdown_removes_residual_css_blocks():
+    raw = """
+    .data_color_scheme_dark{--weui-BG-0:#111;--weui-FG-0:#eee;}
+    :root{--main-color:#333;--font-size:14px;}
+    @media (prefers-color-scheme: dark){.content{color:#ddd;}}
+    .article-content .meta, .article-content .tags { display:none; margin:0; }
+    #article p { line-height: 1.8; color: #222; }
+
+    # 正文标题
+    正文第一段：这是保留内容。
+    正文第二段：这也是保留内容。
+    """
+
+    cleaned = clean_markdown(raw)
+
+    assert ".data_color_scheme_dark" not in cleaned
+    assert ":root{" not in cleaned
+    assert "@media" not in cleaned
+    assert ".article-content .meta" not in cleaned
+    assert "#article p {" not in cleaned
+    assert "正文第一段：这是保留内容。" in cleaned
+    assert "正文第二段：这也是保留内容。" in cleaned
