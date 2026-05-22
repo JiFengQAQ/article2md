@@ -2,10 +2,10 @@ import json
 import re
 from unittest.mock import Mock, patch
 
-from adapters.huawei import HuaweiAutoAdapter
+from adapters.hima_community_adapter import HimaCommunityAdapter
 
 
-def test_huawei_adapter_parses_sample_payload():
+def test_hima_community_adapter_parses_sample_payload():
     payload = {
         "code": 0,
         "contentDetail": {
@@ -41,9 +41,9 @@ def test_huawei_adapter_parses_sample_payload():
     def fake_dimensions(_url: str):
         return (900, 450)
 
-    with patch("adapters.huawei.requests.get", return_value=response) as mock_get:
+    with patch("adapters.hima_community_adapter.requests.get", return_value=response) as mock_get:
         with patch("images._fetch_image_dimensions", side_effect=fake_dimensions):
-            adapter = HuaweiAutoAdapter(image_fail_open=False)
+            adapter = HimaCommunityAdapter(image_fail_open=False)
             article = adapter.extract(
                 "https://omp.uopes.cn/static/webapp/share/article_details.html?contentId=1642222"
             )

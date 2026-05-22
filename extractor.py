@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from adapters import HuaweiAutoAdapter, PlatformAdapter, PlaywrightAdapter, RequestsAdapter
+from adapters import HimaCommunityAdapter, PlatformAdapter, PlaywrightAdapter, RequestsAdapter
 from models import Article, DEFAULT_RETRIES, DEFAULT_TIMEOUT, IMAGE_DIMENSION_FAIL_OPEN
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ class ArticleExtractor:
         self.retries = retries
         self.image_fail_open = image_fail_open
         self.adapters: list[PlatformAdapter] = [
-            HuaweiAutoAdapter(image_fail_open=image_fail_open),
+            HimaCommunityAdapter(image_fail_open=image_fail_open),
             RequestsAdapter(timeout=timeout, image_fail_open=image_fail_open),
             PlaywrightAdapter(timeout=timeout, retries=retries, image_fail_open=image_fail_open),
         ]
@@ -44,7 +44,7 @@ class ArticleExtractor:
             if article:
                 return article
 
-            if isinstance(adapter, HuaweiAutoAdapter):
+            if isinstance(adapter, HimaCommunityAdapter):
                 logger.warning("%s returned None for known platform, skipping fallback", type(adapter).__name__)
                 return None
 
