@@ -5,6 +5,24 @@ from unittest.mock import Mock, patch
 from adapters.hima_community_adapter import HimaCommunityAdapter
 
 
+def _fake_dimensions(_url: str):
+    return (900, 450)
+
+
+def _extract_with_payload(payload: dict, content_id: str = "1642222"):
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = payload
+
+    with patch("adapters.hima_community_adapter.requests.get", return_value=response) as mock_get:
+        with patch("images._fetch_image_dimensions", side_effect=_fake_dimensions):
+            adapter = HimaCommunityAdapter(image_fail_open=False)
+            article = adapter.extract(
+                f"https://omp.uopes.cn/static/webapp/share/article_details.html?contentId={content_id}"
+            )
+    return article, mock_get
+
+
 def test_hima_community_adapter_parses_sample_payload():
     payload = {
         "code": 0,
@@ -34,19 +52,7 @@ def test_hima_community_adapter_parses_sample_payload():
         "userInfoVo": {"creatorName": "作者A"},
     }
 
-    response = Mock()
-    response.raise_for_status.return_value = None
-    response.json.return_value = payload
-
-    def fake_dimensions(_url: str):
-        return (900, 450)
-
-    with patch("adapters.hima_community_adapter.requests.get", return_value=response) as mock_get:
-        with patch("images._fetch_image_dimensions", side_effect=fake_dimensions):
-            adapter = HimaCommunityAdapter(image_fail_open=False)
-            article = adapter.extract(
-                "https://omp.uopes.cn/static/webapp/share/article_details.html?contentId=1642222"
-            )
+    article, mock_get = _extract_with_payload(payload, content_id="1642222")
 
     assert article is not None
     assert article.title == "社区话题"
@@ -59,7 +65,10 @@ def test_hima_community_adapter_parses_sample_payload():
     assert "https://img.example.com/body.jpg" in article.images
     assert "https://img.example.com/cover.jpg" in article.images
     assert "https://img.example.com/fc.jpg" in article.images
-    assert "https://img.example.com/fcp.jpg" in article.images
+    assert "https://img.example.com/content.jpg" not in article.images
+    assert "https://img.example.com/banner.jpg" not in article.images
+    assert "https://img.example.com/fcp.jpg" not in article.images
+    assert len(article.images) == 3
     assert len(article.images) == len(re.findall(r"!\[[^\]]*\]\([^\)]+\)", article.markdown))
 
     assert mock_get.call_count == 1
@@ -67,7 +76,7 @@ def test_hima_community_adapter_parses_sample_payload():
 
 
 def test_hima_dynamic_post_extracts_images_from_imagecontent_and_filecontent():
-    """Dynamics (stype=3) have no articleMainBodyList but have imageContent/fileContent."""
+    """Prefer fileContent over imageContent for dynamics to avoid rendition duplicates."""
     payload = {
         "code": 0,
         "contentDetail": {
@@ -87,33 +96,47 @@ def test_hima_dynamic_post_extracts_images_from_imagecontent_and_filecontent():
         "userInfoVo": {"creatorName": "Andy欣泽"},
     }
 
-    response = Mock()
-    response.raise_for_status.return_value = None
-    response.json.return_value = payload
-
-    def fake_dimensions(_url: str):
-        return (900, 450)
-
-    with patch("adapters.hima_community_adapter.requests.get", return_value=response):
-        with patch("images._fetch_image_dimensions", side_effect=fake_dimensions):
-            adapter = HimaCommunityAdapter(image_fail_open=False)
-            article = adapter.extract(
-                "https://omp.uopes.cn/static/webapp/share/dynamic_details.html?contentId=1646354"
-            )
+    article, _ = _extract_with_payload(payload, content_id="1646354")
 
     assert article is not None
     assert "全网寻找" in article.markdown
-    # All 4 images should appear in both markdown and images list
-    assert "https://cdn.example.com/img1.jpg" in article.images
-    assert "https://cdn.example.com/img2.png" in article.images
+    assert "https://cdn.example.com/img1.jpg" not in article.images
+    assert "https://cdn.example.com/img2.png" not in article.images
     assert "https://cdn.example.com/fc1.jpg" in article.images
     assert "https://cdn.example.com/fc2.jpg" in article.images
-    assert len(article.images) == 4
-    assert len(re.findall(r"!\[[^\]]*\]\([^\)]+\)", article.markdown)) == 4
+    assert len(article.images) == 2
+    assert len(re.findall(r"!\[[^\]]*\]\([^\)]+\)", article.markdown)) == 2
+
+
+def test_hima_richtext_imageurl_same_url_is_not_duplicated():
+    payload = {
+        "code": 0,
+        "contentDetail": {
+            "title": "T",
+            "subtitle": "",
+            "textContent": "",
+            "articleMainBodyList": [
+                {
+                    "richText": '<p><img src="https://cdn.example.com/same.jpg"></p>',
+                    "imageUrl": "https://cdn.example.com/same.jpg",
+                    "fileBodyContent": "",
+                }
+            ],
+            "imageContent": [],
+            "fileContent": "",
+        },
+        "userInfoVo": {"creatorName": "A"},
+    }
+
+    article, _ = _extract_with_payload(payload, content_id="1650001")
+
+    assert article is not None
+    assert article.images == ["https://cdn.example.com/same.jpg"]
+    assert len(re.findall(r"!\[[^\]]*\]\([^\)]+\)", article.markdown)) == 1
 
 
 def test_hima_article_block_with_imageurl_but_no_richtext_still_extracts_images():
-    """Block with imageUrl but empty richText should not be skipped."""
+    """Prefer fileBodyContent over imageUrl in body blocks."""
     payload = {
         "code": 0,
         "contentDetail": {
@@ -143,32 +166,74 @@ def test_hima_article_block_with_imageurl_but_no_richtext_still_extracts_images(
         "userInfoVo": {"creatorName": "官方资讯"},
     }
 
-    response = Mock()
-    response.raise_for_status.return_value = None
-    response.json.return_value = payload
-
-    def fake_dimensions(_url: str):
-        return (900, 450)
-
-    with patch("adapters.hima_community_adapter.requests.get", return_value=response):
-        with patch("images._fetch_image_dimensions", side_effect=fake_dimensions):
-            adapter = HimaCommunityAdapter(image_fail_open=False)
-            article = adapter.extract(
-                "https://omp.uopes.cn/static/webapp/share/article_details.html?contentId=1642743"
-            )
+    article, _ = _extract_with_payload(payload, content_id="1642743")
 
     assert article is not None
     # poster from richText block[0]
     assert "https://cdn.example.com/poster.jpg" in article.images
-    # body_img from block[1] imageUrl (was previously skipped)
-    assert "https://cdn.example.com/body_img.jpg" in article.images
-    # top from imageContent
-    assert "https://cdn.example.com/top.jpg" in article.images
+    # body block prefers fileBodyContent over imageUrl
+    assert "https://cdn.example.com/body_img.jpg" not in article.images
+    # top-level list prefers fileContent over imageContent
+    assert "https://cdn.example.com/top.jpg" not in article.images
     # fc_item from fileContent
     assert "https://cdn.example.com/fc_item.jpg" in article.images
     # fbc from block[1] fileBodyContent
     assert "https://cdn.example.com/fbc.jpg" in article.images
-    assert len(article.images) == 5
-    assert len(re.findall(r"!\[[^\]]*\]\([^\)]+\)", article.markdown)) == 5
+    assert len(article.images) == 3
+    assert len(re.findall(r"!\[[^\]]*\]\([^\)]+\)", article.markdown)) == 3
 
 
+def test_hima_media_list_duplicate_cover_prefers_single_filecontent_item():
+    payload = {
+        "code": 0,
+        "contentDetail": {
+            "title": "T",
+            "subtitle": "",
+            "textContent": "纯文本",
+            "articleMainBodyList": [],
+            "imageContent": ["https://cdn.example.com/preview.jpg"],
+            "imgContentPlus": "https://cdn.example.com/plus-preview.jpg",
+            "fileContent": json.dumps([
+                {"imagePath": "https://cdn.example.com/", "imageName": "primary.jpg"}
+            ]),
+            "fileContentPlus": json.dumps([
+                {"imagePath": "https://cdn.example.com/", "imageName": "plus.jpg"}
+            ]),
+        },
+        "userInfoVo": {"creatorName": "A"},
+    }
+
+    article, _ = _extract_with_payload(payload, content_id="1576724")
+
+    assert article is not None
+    assert article.images == ["https://cdn.example.com/primary.jpg"]
+    assert len(re.findall(r"!\[[^\]]*\]\([^\)]+\)", article.markdown)) == 1
+
+
+def test_hima_missing_image_injection_checks_markdown_image_refs_not_substrings():
+    payload = {
+        "code": 0,
+        "contentDetail": {
+            "title": "T",
+            "subtitle": "",
+            "textContent": "",
+            "articleMainBodyList": [
+                {
+                    "richText": '<p><a href="https://cdn.example.com/fc.jpg">点击查看</a></p>',
+                    "imageUrl": "",
+                    "fileBodyContent": "",
+                }
+            ],
+            "imageContent": [],
+            "fileContent": json.dumps([
+                {"imagePath": "https://cdn.example.com/", "imageName": "fc.jpg"}
+            ]),
+        },
+        "userInfoVo": {"creatorName": "A"},
+    }
+
+    article, _ = _extract_with_payload(payload, content_id="1650002")
+
+    assert article is not None
+    assert re.search(r"!\[[^\]]*\]\(\s*https://cdn\.example\.com/fc\.jpg\s*\)", article.markdown)
+    assert article.images == ["https://cdn.example.com/fc.jpg"]

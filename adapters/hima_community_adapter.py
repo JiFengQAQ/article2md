@@ -53,9 +53,13 @@ class HimaCommunityAdapter(PlatformAdapter):
         images = _dedupe(images)
 
         # Inject images not yet in markdown so _sync_images_to_markdown keeps them.
+        markdown_image_refs = self._markdown_image_refs(markdown)
         for img_url in images:
-            if img_url not in markdown:
-                markdown += f"\n![]( {img_url} )\n"
+            normalized = self._normalize_markdown_image_ref(img_url)
+            if normalized in markdown_image_refs:
+                continue
+            markdown += f"\n![]( {img_url} )\n"
+            markdown_image_refs.add(normalized)
 
         markdown = finalize_markdown_and_images(
             markdown=markdown,
@@ -115,7 +119,11 @@ class HimaCommunityAdapter(PlatformAdapter):
             return self._parse_richtext_blocks(body_blocks)
 
         if body_blocks and any(
-            block.get("mainBodyText") or block.get("imageUrl") or block.get("videoUrl") for block in body_blocks
+            block.get("mainBodyText")
+            or block.get("imageUrl")
+            or block.get("fileBodyContent")
+            or block.get("videoUrl")
+            for block in body_blocks
         ):
             return self._parse_text_image_blocks(body_blocks)
 
@@ -128,29 +136,24 @@ class HimaCommunityAdapter(PlatformAdapter):
 
         for block in body_blocks:
             rich_text = block.get("richText")
+            richtext_images: list[str] = []
             if rich_text:
                 html_parts.append(rich_text)
-                images.extend(self._extract_richtext_images(rich_text))
+                richtext_images = self._extract_richtext_images(rich_text)
+                images.extend(richtext_images)
 
-            # Also collect images from blocks without richText.
-            image_url = (block.get("imageUrl") or "").strip()
-            if image_url:
-                html_parts.append(
-                    f'<img src="{image_url}" alt="正文配图">'
-                )
-                images.append(image_url)
-
-            file_body_content = block.get("fileBodyContent")
-            if file_body_content:
-                if isinstance(file_body_content, str):
-                    images.extend(self._parse_file_content_urls(file_body_content))
-                elif isinstance(file_body_content, list):
-                    for item in file_body_content:
-                        if isinstance(item, dict):
-                            ip = item.get("imagePath") or ""
-                            im = item.get("imageName") or ""
-                            if ip or im:
-                                images.append(ip + im)
+            file_body_urls = self._parse_file_body_content_urls(block)
+            if file_body_urls:
+                images.extend(file_body_urls)
+            else:
+                # Fall back to imageUrl only when fileBodyContent has no usable URLs.
+                image_url = (block.get("imageUrl") or "").strip()
+                richtext_url_set = {url.strip() for url in richtext_images if url}
+                if image_url and image_url not in richtext_url_set:
+                    html_parts.append(
+                        f'<img src="{image_url}" alt="正文配图">'
+                    )
+                    images.append(image_url)
 
         markdown = html_to_markdown("\n".join(html_parts)) if html_parts else ""
         return markdown, _dedupe(images)
@@ -162,10 +165,14 @@ class HimaCommunityAdapter(PlatformAdapter):
         for block in body_blocks:
             markdown_parts.extend(self._render_block_text(block.get("mainBodyText") or ""))
 
-            image_url = (block.get("imageUrl") or "").strip()
-            if image_url:
-                markdown_parts.append(f"![]( {image_url} )\n")
-                images.append(image_url)
+            file_body_urls = self._parse_file_body_content_urls(block)
+            if file_body_urls:
+                images.extend(file_body_urls)
+            else:
+                image_url = (block.get("imageUrl") or "").strip()
+                if image_url:
+                    markdown_parts.append(f"![]( {image_url} )\n")
+                    images.append(image_url)
 
             markdown_parts.extend(self._render_block_video(block))
             cover = (block.get("videoCoverUrl") or "").strip()
@@ -202,20 +209,78 @@ class HimaCommunityAdapter(PlatformAdapter):
         return parts
 
     def _parse_media_lists(self, content_detail: dict[str, Any]) -> list[str]:
-        images: list[str] = []
+        file_content_urls = self._parse_file_content_urls(content_detail.get("fileContent") or "")
+        image_content_urls = [
+            image_url.strip()
+            for image_url in (content_detail.get("imageContent") or [])
+            if isinstance(image_url, str) and image_url.strip()
+        ]
+        primary_urls = file_content_urls if file_content_urls else image_content_urls
 
-        for image_url in content_detail.get("imageContent") or []:
-            if image_url:
-                images.append(image_url)
-
+        file_content_plus_urls = self._parse_file_content_urls(content_detail.get("fileContentPlus") or "")
         img_content_plus = (content_detail.get("imgContentPlus") or "").strip()
-        if img_content_plus:
-            images.append(img_content_plus)
+        img_content_plus_urls = [img_content_plus] if img_content_plus else []
+        plus_urls = file_content_plus_urls if file_content_plus_urls else img_content_plus_urls
 
-        images.extend(self._parse_file_content_urls(content_detail.get("fileContent") or ""))
-        images.extend(self._parse_file_content_urls(content_detail.get("fileContentPlus") or ""))
+        if self._should_suppress_plus_media(primary_urls, plus_urls, file_content_urls, file_content_plus_urls):
+            plus_urls = []
 
-        return _dedupe(images)
+        return _dedupe(primary_urls + plus_urls)
+
+    @staticmethod
+    def _parse_file_body_content_urls(block: dict[str, Any]) -> list[str]:
+        file_body_content = block.get("fileBodyContent")
+        if not file_body_content:
+            return []
+
+        if isinstance(file_body_content, str):
+            return HimaCommunityAdapter._parse_file_content_urls(file_body_content)
+
+        if isinstance(file_body_content, list):
+            urls: list[str] = []
+            for item in file_body_content:
+                if not isinstance(item, dict):
+                    continue
+                image_url = (item.get("imagePath") or "") + (item.get("imageName") or "")
+                if image_url:
+                    urls.append(image_url)
+            return _dedupe(urls)
+
+        return []
+
+    @staticmethod
+    def _should_suppress_plus_media(
+        primary_urls: list[str],
+        plus_urls: list[str],
+        file_content_urls: list[str],
+        file_content_plus_urls: list[str],
+    ) -> bool:
+        if not primary_urls or not plus_urls:
+            return False
+
+        primary_url_set = set(primary_urls)
+        if any(url in primary_url_set for url in plus_urls):
+            return True
+
+        # Common HIMA pattern: fileContent/fileContentPlus are alternate single-item
+        # renditions for the same cover/supplemental slot.
+        if file_content_urls and file_content_plus_urls and len(file_content_urls) == 1 and len(file_content_plus_urls) == 1:
+            return True
+
+        return False
+
+    @staticmethod
+    def _normalize_markdown_image_ref(url: str) -> str:
+        return (url or "").strip().strip("<>").strip()
+
+    @classmethod
+    def _markdown_image_refs(cls, markdown: str) -> set[str]:
+        refs: set[str] = set()
+        for match in re.finditer(r'!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+["\'][^)]*["\'])?\s*\)', markdown or ""):
+            normalized = cls._normalize_markdown_image_ref(match.group(1))
+            if normalized:
+                refs.add(normalized)
+        return refs
 
     @staticmethod
     def _parse_file_content_urls(raw_content: str) -> list[str]:
