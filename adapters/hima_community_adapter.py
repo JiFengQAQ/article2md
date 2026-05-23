@@ -52,6 +52,11 @@ class HimaCommunityAdapter(PlatformAdapter):
         images.extend(self._parse_media_lists(content_detail))
         images = _dedupe(images)
 
+        # Inject images not yet in markdown so _sync_images_to_markdown keeps them.
+        for img_url in images:
+            if img_url not in markdown:
+                markdown += f"\n![]( {img_url} )\n"
+
         markdown = finalize_markdown_and_images(
             markdown=markdown,
             images=images,
@@ -123,10 +128,29 @@ class HimaCommunityAdapter(PlatformAdapter):
 
         for block in body_blocks:
             rich_text = block.get("richText")
-            if not rich_text:
-                continue
-            html_parts.append(rich_text)
-            images.extend(self._extract_richtext_images(rich_text))
+            if rich_text:
+                html_parts.append(rich_text)
+                images.extend(self._extract_richtext_images(rich_text))
+
+            # Also collect images from blocks without richText.
+            image_url = (block.get("imageUrl") or "").strip()
+            if image_url:
+                html_parts.append(
+                    f'<img src="{image_url}" alt="正文配图">'
+                )
+                images.append(image_url)
+
+            file_body_content = block.get("fileBodyContent")
+            if file_body_content:
+                if isinstance(file_body_content, str):
+                    images.extend(self._parse_file_content_urls(file_body_content))
+                elif isinstance(file_body_content, list):
+                    for item in file_body_content:
+                        if isinstance(item, dict):
+                            ip = item.get("imagePath") or ""
+                            im = item.get("imageName") or ""
+                            if ip or im:
+                                images.append(ip + im)
 
         markdown = html_to_markdown("\n".join(html_parts)) if html_parts else ""
         return markdown, _dedupe(images)
