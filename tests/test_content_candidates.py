@@ -1,6 +1,7 @@
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import adapters.content_candidates as content_candidates
 from adapters.content_candidates import (
     _attr_blob,
     _serialize_candidate,
@@ -10,7 +11,7 @@ from adapters.content_candidates import (
 from adapters.playwright_adapter import PlaywrightAdapter
 from adapters.requests_adapter import build_article_from_html
 from adapters.requests_adapter import RequestsAdapter
-from markdown import html_to_markdown
+from markdown import clean_markdown, html_to_markdown
 
 
 SAMPLE_HTML = """
@@ -78,6 +79,42 @@ def test_candidate_extraction_prefers_main_article_container():
     assert "工具链" in markdown
     assert "热门推荐" not in markdown
     assert "评论区" not in markdown
+
+
+def test_choose_best_markdown_cleans_each_candidate_once(monkeypatch):
+    calls: list[str] = []
+
+    def _tracking_clean_markdown(value: str) -> str:
+        calls.append(value)
+        return (value or "").strip()
+
+    monkeypatch.setattr(content_candidates, "clean_markdown", _tracking_clean_markdown)
+
+    candidates = [
+        "第一段：这是候选内容一，包含足够多的正文文字。\n\n第二段：继续补充细节。",
+        "第一段：这是候选内容二，结构不同但也属于正文。\n\n第二段：补充段落。",
+        "第一段：这是候选内容三，用于统计清洗调用次数。\n\n第二段：追加信息。",
+    ]
+
+    _ = content_candidates.choose_best_markdown(candidates, min_chars=10, min_paragraphs=1)
+
+    assert len(calls) == 3
+
+
+def test_markdown_body_metrics_matches_internal_cleaned_helper():
+    raw = """
+    ## 标题
+    第一段正文，包含[链接](https://example.com)与更多描述性文字。
+
+    第二段正文，包含更多句子，并保持正常标点密度。
+    """.strip()
+
+    cleaned = clean_markdown(raw)
+
+    expected = content_candidates._metrics_from_cleaned_markdown(cleaned)
+    actual = content_candidates.markdown_body_metrics(raw)
+
+    assert actual == expected
 
 
 def test_candidate_extraction_merges_siblings_and_prunes_related_blocks():

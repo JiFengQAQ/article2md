@@ -131,16 +131,19 @@ def _node_stats(node: Any) -> TextStats:
     return _stats_from_text(text, _paragraph_count(node, text), _compact_whitespace(" ".join(node.xpath(".//a//text()"))))
 
 
-def _markdown_plain_text(markdown: str) -> str:
-    cleaned = clean_markdown(markdown or "")
+def _plain_text_from_cleaned_markdown(cleaned: str) -> str:
     text = _MARKDOWN_IMAGE_RE.sub(" ", cleaned)
     text = _MARKDOWN_LINK_RE.sub(r"\1", text)
     return _compact_whitespace(re.sub(r"[#>*_`~\-]+", " ", text))
 
 
-def markdown_body_metrics(markdown: str) -> dict[str, float]:
+def _markdown_plain_text(markdown: str) -> str:
     cleaned = clean_markdown(markdown or "")
-    plain = _markdown_plain_text(cleaned)
+    return _plain_text_from_cleaned_markdown(cleaned)
+
+
+def _metrics_from_cleaned_markdown(cleaned: str) -> dict[str, float]:
+    plain = _plain_text_from_cleaned_markdown(cleaned)
     paragraphs = sum(1 for line in cleaned.splitlines() if _char_count(line.strip().lstrip("#>*-0123456789. ")) >= 24)
     if paragraphs == 0:
         paragraphs = len([part for part in re.split(r"[。！？.!?]", plain) if _char_count(part) >= 20])
@@ -149,13 +152,18 @@ def markdown_body_metrics(markdown: str) -> dict[str, float]:
     return {"char_count": float(stats.chars), "paragraph_count": float(stats.paragraphs), "punct_density": float(stats.punct_density), "link_density": float(stats.link_density)}
 
 
+def markdown_body_metrics(markdown: str) -> dict[str, float]:
+    cleaned = clean_markdown(markdown or "")
+    return _metrics_from_cleaned_markdown(cleaned)
+
+
 def choose_best_markdown(markdowns: list[str], min_chars: int = 220, min_paragraphs: int = 3) -> str:
     best_markdown, best_score = "", float("-inf")
     for candidate in markdowns:
         cleaned = clean_markdown(candidate or "")
         if not cleaned:
             continue
-        metrics = markdown_body_metrics(cleaned)
+        metrics = _metrics_from_cleaned_markdown(cleaned)
         score = metrics["char_count"] + metrics["paragraph_count"] * 120.0 + metrics["punct_density"] * 3200.0 - metrics["link_density"] * 1800.0
         if metrics["char_count"] < min_chars:
             score -= (min_chars - metrics["char_count"]) * 0.8
