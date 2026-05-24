@@ -61,9 +61,6 @@ class TextStats:
 class _Candidate:
     node: Any
     score: float
-    text_chars: int
-    paragraph_count: int
-    link_density: float
 
 
 def _compact_whitespace(text: str) -> str:
@@ -129,6 +126,11 @@ def _stats_from_text(text: str, paragraph_count: int, link_text: str = "") -> Te
     )
 
 
+def _node_stats(node: Any) -> TextStats:
+    text = _node_text(node)
+    return _stats_from_text(text, _paragraph_count(node, text), _compact_whitespace(" ".join(node.xpath(".//a//text()"))))
+
+
 def _markdown_plain_text(markdown: str) -> str:
     cleaned = clean_markdown(markdown or "")
     text = _MARKDOWN_IMAGE_RE.sub(" ", cleaned)
@@ -147,11 +149,6 @@ def markdown_body_metrics(markdown: str) -> dict[str, float]:
     return {"char_count": float(stats.chars), "paragraph_count": float(stats.paragraphs), "punct_density": float(stats.punct_density), "link_density": float(stats.link_density)}
 
 
-def _markdown_quality_score(markdown: str) -> float:
-    metrics = markdown_body_metrics(markdown)
-    return metrics["char_count"] + metrics["paragraph_count"] * 120.0 + metrics["punct_density"] * 3200.0 - metrics["link_density"] * 1800.0
-
-
 def choose_best_markdown(markdowns: list[str], min_chars: int = 220, min_paragraphs: int = 3) -> str:
     best_markdown, best_score = "", float("-inf")
     for candidate in markdowns:
@@ -159,7 +156,7 @@ def choose_best_markdown(markdowns: list[str], min_chars: int = 220, min_paragra
         if not cleaned:
             continue
         metrics = markdown_body_metrics(cleaned)
-        score = _markdown_quality_score(cleaned)
+        score = metrics["char_count"] + metrics["paragraph_count"] * 120.0 + metrics["punct_density"] * 3200.0 - metrics["link_density"] * 1800.0
         if metrics["char_count"] < min_chars:
             score -= (min_chars - metrics["char_count"]) * 0.8
         if metrics["paragraph_count"] < min_paragraphs:
@@ -186,8 +183,7 @@ def _descendant_negative_count(node: Any) -> int:
 
 def _candidate_score(node: Any, min_chars: int) -> Optional[_Candidate]:
     text = _node_text(node)
-    paragraphs = _paragraph_count(node, text)
-    stats = _stats_from_text(text, paragraphs, _compact_whitespace(" ".join(node.xpath(".//a//text()"))))
+    stats = _node_stats(node)
     if stats.chars < max(60, min_chars // 3):
         return None
     attrs, tag, role = _attr_blob(node), _tag_name(node), (node.get("role") or "").lower()
@@ -210,7 +206,7 @@ def _candidate_score(node: Any, min_chars: int) -> Optional[_Candidate]:
         score -= 40.0
     if stats.sentences < 2:
         score -= 20.0
-    return _Candidate(node=node, score=score, text_chars=stats.chars, paragraph_count=stats.paragraphs, link_density=stats.link_density)
+    return _Candidate(node=node, score=score)
 
 
 def _is_hard_negative_node(node: Any) -> bool:
@@ -220,15 +216,12 @@ def _is_hard_negative_node(node: Any) -> bool:
     negative_hits = _hint_hits(attrs, _NEGATIVE_ATTR_HINTS)
     if negative_hits == 0:
         return False
-    text = _node_text(node)
-    chars = _char_count(text)
-    link_density = _char_count(_compact_whitespace(" ".join(node.xpath(".//a//text()")))) / max(chars, 1)
-    negative_text_hits = sum(text.count(keyword) for keyword in _NEGATIVE_TEXT_HINTS)
+    stats = _node_stats(node)
     return (
-        (negative_hits >= 2 and chars <= 2600)
-        or (negative_text_hits > 0 and chars <= 2600)
-        or (link_density >= 0.45 and chars <= 2200)
-        or (negative_hits >= 1 and link_density >= 0.18 and chars <= 1300)
+        (negative_hits >= 2 and stats.chars <= 2600)
+        or (stats.negative_text_hits > 0 and stats.chars <= 2600)
+        or (stats.link_density >= 0.45 and stats.chars <= 2200)
+        or (negative_hits >= 1 and stats.link_density >= 0.18 and stats.chars <= 1300)
     )
 
 
@@ -238,15 +231,11 @@ def _should_prune_noise(node: Any) -> bool:
     if _tag_name(node) not in {"div", "section", "ul", "ol", "li"}:
         return False
     has_media = bool(node.xpath(".//img|.//picture|.//figure|.//video|.//source"))
-    text = _node_text(node)
-    chars = _char_count(text)
-    if chars == 0 and not has_media:
+    stats = _node_stats(node)
+    if stats.chars == 0 and not has_media:
         return True
-    link_density = _char_count(_compact_whitespace(" ".join(node.xpath(".//a//text()")))) / max(chars, 1)
-    punct_density = len(_PUNCT_RE.findall(text)) / max(chars, 1)
-    paragraphs = _paragraph_count(node, text)
     li_count = len(node.xpath(".//li"))
-    return (link_density >= 0.55 and punct_density < 0.01) or (li_count >= 8 and paragraphs <= 1 and link_density >= 0.15)
+    return (stats.link_density >= 0.55 and stats.punct_density < 0.01) or (li_count >= 8 and stats.paragraphs <= 1 and stats.link_density >= 0.15)
 
 
 def _prune_candidate_tree(node: Any) -> Any:
@@ -266,16 +255,12 @@ def _serialize_candidate(node: Any, lxml_html: Any) -> str:
 def _sibling_is_content_like(node: Any, min_chars: int) -> bool:
     if _is_hard_negative_node(node):
         return False
-    text = _node_text(node)
-    chars = _char_count(text)
-    if chars < max(40, min_chars // 4):
+    stats = _node_stats(node)
+    if stats.chars < max(40, min_chars // 4):
         return False
-    paragraphs = _paragraph_count(node, text)
-    link_density = _char_count(_compact_whitespace(" ".join(node.xpath(".//a//text()")))) / max(chars, 1)
-    punct_density = len(_PUNCT_RE.findall(text)) / max(chars, 1)
-    if link_density > 0.6 and paragraphs < 2:
+    if stats.link_density > 0.6 and stats.paragraphs < 2:
         return False
-    if punct_density < 0.004 and paragraphs <= 1 and chars < 300:
+    if stats.punct_density < 0.004 and stats.paragraphs <= 1 and stats.chars < 300:
         return False
     return True
 
@@ -319,24 +304,21 @@ def _serialize_node_group(nodes: list[Any], lxml_html: Any) -> str:
     return lxml_html.tostring(wrapper, encoding="unicode", method="html")
 
 
-def _html_metrics(html: str) -> tuple[int, int, float, float, int]:
+def _html_stats(html: str) -> TextStats:
     try:
         from lxml import html as lxml_html
 
-        root = lxml_html.fromstring(html or "")
+        return _node_stats(lxml_html.fromstring(html or ""))
     except Exception:
-        return 0, 0, 0.0, 1.0, 0
-    text = _node_text(root)
-    stats = _stats_from_text(text, _paragraph_count(root, text), _compact_whitespace(" ".join(root.xpath(".//a//text()"))))
-    return stats.chars, stats.paragraphs, stats.punct_density, stats.link_density, stats.negative_text_hits
+        return TextStats(0, 0, 0, 0.0, 1.0, 0)
 
 
 def _html_quality_score(html: str, min_chars: int) -> float:
-    chars, paragraphs, punct_density, link_density, negative_hits = _html_metrics(html)
-    score = min(chars, 22000) / 35.0 + min(paragraphs, 100) * 10.0 + min(punct_density, 0.22) * 280.0
-    score -= min(link_density, 1.0) * 240.0 + min(negative_hits, 16) * 10.0
-    if chars < min_chars:
-        score -= (min_chars - chars) * 0.8
+    stats = _html_stats(html)
+    score = min(stats.chars, 22000) / 35.0 + min(stats.paragraphs, 100) * 10.0 + min(stats.punct_density, 0.22) * 280.0
+    score -= min(stats.link_density, 1.0) * 240.0 + min(stats.negative_text_hits, 16) * 10.0
+    if stats.chars < min_chars:
+        score -= (min_chars - stats.chars) * 0.8
     return score
 
 
@@ -412,11 +394,11 @@ def extract_best_candidate_html(html: str, min_chars: int = 200) -> Optional[str
 
     if not best_html:
         return None
-    chars, paragraphs, _punct, link_density, _neg = _html_metrics(best_html)
-    if chars < max(120, int(min_chars * 0.75)):
+    stats = _html_stats(best_html)
+    if stats.chars < max(120, int(min_chars * 0.75)):
         return None
-    if paragraphs < 2 and chars < max(min_chars, 260):
+    if stats.paragraphs < 2 and stats.chars < max(min_chars, 260):
         return None
-    if link_density > 0.72:
+    if stats.link_density > 0.72:
         return None
     return best_html

@@ -25,6 +25,8 @@ _CSS_BLOCK_START_RE = re.compile(
     re.IGNORECASE,
 )
 _CSS_PROP_RE = re.compile(r"^\s*(?:--[a-z0-9\-_]+|[a-z\-]+)\s*:\s*[^:]+;?\s*$", re.IGNORECASE)
+_CHINESE_RE = re.compile(r"[\u3400-\u9fff]")
+_VISIBLE_TEXT_RE = re.compile(r"[\u3400-\u9fffA-Za-z0-9]")
 
 
 def _normalize_markdown(markdown: str) -> str:
@@ -144,20 +146,23 @@ def _pattern_haystack(*parts: str) -> str:
 def _is_captcha(title: str = "", text: str = "", url: str = "") -> bool:
     haystack = _pattern_haystack(title, text, url)
     parsed = urlparse(url or "")
-    if parsed.netloc.endswith("passport.baidu.com"):
-        return True
-    if "captcha" in parsed.path.lower() or "captcha" in parsed.query.lower():
-        return True
-    yiche_tokens = ("_xvasu", "_xvtsc", "_xvpfs", "document.cookie", "window['location']", "window.location")
-    if sum(1 for token in yiche_tokens if token in haystack) >= 3 and ("reload" in haystack or "cookie" in haystack):
-        return True
-    return any(pattern.lower() in haystack for pattern in CAPTCHA_PATTERNS)
+    return (
+        parsed.netloc.endswith("passport.baidu.com")
+        or "captcha" in parsed.path.lower()
+        or "captcha" in parsed.query.lower()
+        or any(pattern.lower() in haystack for pattern in CAPTCHA_PATTERNS)
+    )
 
 
 def _content_text(markdown: str) -> str:
     text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", markdown or "")
     text = re.sub(r"\[[^\]]+\]\([^)]+\)", "", text)
     return re.sub(r"[#>*_`\-\s]+", "", text)
+
+
+def _chinese_char_ratio(*parts: str) -> float:
+    visible = "".join(_VISIBLE_TEXT_RE.findall("\n".join(parts)))
+    return len(_CHINESE_RE.findall(visible)) / max(len(visible), 1)
 
 
 def _is_access_wall_payload(title: str = "", text: str = "", url: str = "") -> bool:
@@ -198,6 +203,8 @@ def is_quality_article(article: Optional[Article], min_chars: int = 100) -> bool
     if _is_access_wall_payload(title=title, text=markdown, url=article.source_url):
         return False
     if len(_content_text(markdown)) < min_chars:
+        return False
+    if _chinese_char_ratio(title, _content_text(markdown)) < 0.5:
         return False
     if sum(1 for pattern in CAPTCHA_PATTERNS if pattern.lower() in _pattern_haystack(markdown)) >= 2:
         return False

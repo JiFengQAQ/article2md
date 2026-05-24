@@ -147,23 +147,19 @@ def _markdown_image_urls(markdown: str) -> list[str]:
     ])
 
 
-def _absolutize_markdown_image_urls(markdown: str, base_url: str = "") -> str:
+def _rewrite_markdown_images(markdown: str, base_url: str = "", filtered_urls: set[str] | None = None) -> tuple[str, list[str]]:
+    filtered_urls = filtered_urls or set()
+    exported: list[str] = []
+
     def _replace(match: re.Match[str]) -> str:
-        alt_text, raw_url, title = match.group(1), match.group(2), match.group(3) or ""
+        alt_text, raw_url, title = match.group(1), _normalize_markdown_image_url(match.group(2)), match.group(3) or ""
         normalized = _normalize_markdown_image_url(raw_url, base_url=base_url)
-        if not normalized or _is_svg_url(normalized):
+        if not normalized or _is_svg_url(normalized) or raw_url in filtered_urls or normalized in filtered_urls:
             return ""
+        exported.append(normalized)
         return f"![{alt_text}]({normalized}{title})"
 
-    return _MARKDOWN_IMAGE_RE.sub(_replace, markdown or "")
-
-
-def _sync_images_to_markdown(markdown: str, images: list[str], base_url: str = "") -> None:
-    images[:] = _dedupe([
-        _normalize_markdown_image_url(url, base_url)
-        for url in _markdown_image_urls(markdown)
-        if url
-    ])
+    return _MARKDOWN_IMAGE_RE.sub(_replace, markdown or ""), _dedupe(exported)
 
 
 def append_unreferenced_images(markdown: str, images: list[str], base_url: str = "") -> str:
@@ -265,12 +261,7 @@ def _fetch_image_dimensions(url: str) -> Optional[tuple[int, int]]:
 def _strip_filtered_markdown_images(markdown: str, filtered_urls: set[str], base_url: str = "") -> str:
     from markdown import clean_markdown
 
-    def _replace(match: re.Match[str]) -> str:
-        raw_url = _normalize_markdown_image_url(match.group(2))
-        normalized = _normalize_markdown_image_url(raw_url, base_url)
-        return "" if raw_url in filtered_urls or normalized in filtered_urls else match.group(0)
-
-    return clean_markdown(_MARKDOWN_IMAGE_RE.sub(_replace, markdown or ""))
+    return clean_markdown(_rewrite_markdown_images(markdown, base_url=base_url, filtered_urls=filtered_urls)[0])
 
 
 def _is_content_image_dimensions(
@@ -346,7 +337,7 @@ def finalize_markdown_and_images(
     from markdown import clean_markdown
 
     images[:] = _dedupe([url for url in (_normalize_image_url(item, base_url) for item in images) if url])
-    markdown = _absolutize_markdown_image_urls(markdown, base_url=base_url)
+    markdown = _rewrite_markdown_images(markdown, base_url=base_url)[0]
     markdown = _strip_svg_and_non_content(
         markdown,
         images,
@@ -356,7 +347,7 @@ def finalize_markdown_and_images(
         fail_open=image_fail_open,
     )
     markdown = clean_markdown(markdown)
-    _sync_images_to_markdown(markdown, images, base_url=base_url)
+    images[:] = _rewrite_markdown_images(markdown, base_url=base_url)[1]
     return markdown
 
 
