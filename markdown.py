@@ -5,204 +5,140 @@ from __future__ import annotations
 import re
 from typing import Optional
 from urllib.parse import urlparse
-
 from markdownify import markdownify
-
 from models import Article, BOILERPLATE_PATTERNS, CAPTCHA_PATTERNS
 
-_EMPTY_HEADING_PATTERN = re.compile(r"^#{1,6}\s*$")
-_POST_ARTICLE_BOUNDARY_PATTERNS = (
+_EMPTY_HEADING_RE = re.compile(r"^#{1,6}\s*$")
+_IMAGE_LINE_RE = re.compile(r"^!\[[^\]]*\]\([^)]+\)$")
+_DATE_PREFIX_RE = re.compile(r"^\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}")
+_META_PREFIX_RE = re.compile(r"^(?:来源|作者|责编|编辑|发布于|发布时间|责任编辑)[:：]")
+_POST_BOUNDARY_RE = [
     re.compile(r"^(?:评论|评论区|网友评论|全部评论|最新评论)(?:[（(\[【]?\s*\d+\s*[）)\]】]?)?$"),
     re.compile(r"^(?:写评论|发表评论|发布评论|参与评论|登录后评论|评论加载中).*$"),
     re.compile(r"^(?:查看更多|查看全部)\s*\d+\s*条?评论.*$"),
     re.compile(r"^(?:热门推荐|相关推荐|相关阅读|推荐阅读|猜你喜欢|大家都在看|相关内容|热门文章)$"),
     re.compile(r"^(?:返回首页|回到首页|回首页看更多|返回频道|返回列表).*$"),
     re.compile(r"^(?:文明上网理性发言|理性发言.*|请遵守.*评论.*协议.*)$"),
-)
-_CSS_SELECTOR_LINE_RE = re.compile(
-    r"^\s*(?:"
-    r"[.#][\w\-\s>+~:,.\[\]='\"()]+"
-    r"|[a-z][\w\-]*(?:[\s>+~:.#\[\]='\"()\-]+[a-z0-9_\-:#\[\]='\"()]+)*"
-    r")\s*\{",
+]
+_CSS_BLOCK_START_RE = re.compile(
+    r"^\s*(?:@(?:media|supports|keyframes|font-face|layer|container)\b[^{}]*|:root\b|[.#]?[a-z0-9_:-][^{}]*)\s*\{",
     re.IGNORECASE,
 )
-_CSS_AT_RULE_RE = re.compile(r"^\s*@(?:media|supports|keyframes|font-face|layer|container)\b", re.IGNORECASE)
-_CSS_ROOT_RE = re.compile(r"^\s*:root\s*\{", re.IGNORECASE)
-_CSS_PROP_LINE_RE = re.compile(r"^\s*(?:--[a-z0-9\-_]+|[a-z\-]+)\s*:\s*[^:]+;?\s*$", re.IGNORECASE)
+_CSS_PROP_RE = re.compile(r"^\s*(?:--[a-z0-9\-_]+|[a-z\-]+)\s*:\s*[^:]+;?\s*$", re.IGNORECASE)
 
 
 def _normalize_markdown(markdown: str) -> str:
-    markdown = (markdown or "").replace("\r\n", "\n")
-    markdown = re.sub(r"\n{3,}", "\n\n", markdown)
-    return markdown.strip()
+    text = (markdown or "").replace("\r\n", "\n")
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 def html_to_markdown(html: str) -> str:
-    """Convert rich HTML to Markdown."""
     if not html:
         return ""
-    markdown = markdownify(
-        html,
-        heading_style="ATX",
-        bullets="*",
-        strip=("script", "style"),
-    )
-    return _normalize_markdown(markdown)
+    return _normalize_markdown(markdownify(html, heading_style="ATX", bullets="*", strip=("script", "style")))
 
 
 def _line_text_for_matching(line: str) -> str:
-    text = line.strip()
+    text = (line or "").strip()
     text = re.sub(r"^(?:>\s*)+", "", text)
     text = re.sub(r"^#{1,6}\s*", "", text)
     text = re.sub(r"^(?:[*+-]|\d+\.)\s+", "", text)
-
-    # Normalize markdown image/link labels before boundary matching.
     for _ in range(3):
-        new_text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
-        new_text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", new_text)
-        if new_text == text:
+        replaced = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
+        replaced = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", replaced)
+        if replaced == text:
             break
-        text = new_text
-
-    text = re.sub(r"[`*_~]+", "", text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+        text = replaced
+    return re.sub(r"\s+", " ", re.sub(r"[`*_~]+", "", text)).strip()
 
 
-def _normalized_boundary_variants(line: str) -> tuple[str, str]:
+def _boundary_variants(line: str) -> tuple[str, str]:
     normalized = _line_text_for_matching(line)
-    compact = re.sub(r"[\s\-|｜|:：·•]+", "", normalized)
-    return normalized, compact
+    return normalized, re.sub(r"[\s\-|｜:：·•]+", "", normalized)
 
 
 def _is_post_article_boundary(line: str) -> bool:
-    normalized, compact = _normalized_boundary_variants(line)
-    if not normalized:
-        return False
-    for pattern in _POST_ARTICLE_BOUNDARY_PATTERNS:
-        if pattern.match(normalized) or pattern.match(compact):
-            return True
-    return False
+    normalized, compact = _boundary_variants(line)
+    return bool(normalized) and any(pattern.match(normalized) or pattern.match(compact) for pattern in _POST_BOUNDARY_RE)
 
 
 def _is_body_content_line(line: str) -> bool:
-    stripped = line.strip()
-    if not stripped:
+    stripped = (line or "").strip()
+    if not stripped or _EMPTY_HEADING_RE.match(stripped):
         return False
-    if _EMPTY_HEADING_PATTERN.match(stripped):
-        return False
-    if re.match(r"^!\[[^\]]*\]\([^)]+\)$", stripped):
+    if _IMAGE_LINE_RE.match(stripped):
         return True
-
     text = _line_text_for_matching(stripped)
     if not text:
         return False
-
-    char_count = len(re.sub(r"\s+", "", text))
-    if char_count >= 24:
-        return True
-    if char_count >= 14 and re.search(r"[，。！？；：,.!?;:]", text):
-        return True
-    return False
+    chars = len(re.sub(r"\s+", "", text))
+    return chars >= 24 or (chars >= 14 and bool(re.search(r"[，。！？；：,.!?;:]", text)))
 
 
-def _is_substantive_article_body_line(line: str) -> bool:
-    stripped = line.strip()
-    if not _is_body_content_line(stripped):
-        return False
-    if stripped.startswith("#"):
+def _is_substantive_article_line(line: str) -> bool:
+    stripped = (line or "").strip()
+    if stripped.startswith("#") or _IMAGE_LINE_RE.match(stripped) or not _is_body_content_line(stripped):
         return False
     text = _line_text_for_matching(stripped)
     compact = re.sub(r"\s+", "", text)
-    if re.match(r"^\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}", compact):
-        return False
-    if re.match(r"^(?:来源|作者|责编|编辑|发布于|发布时间|责任编辑)[:：]", text):
-        return False
-    if _is_post_article_boundary(stripped):
-        return False
-    if re.match(r"^!\[[^\]]*\]\([^)]+\)$", stripped):
-        return False
-    return True
+    return not (_DATE_PREFIX_RE.match(compact) or _META_PREFIX_RE.match(text) or _is_post_article_boundary(stripped))
 
 
 def _looks_like_css_block_start(line: str) -> bool:
-    stripped = line.strip()
-    if not stripped or stripped.startswith("# "):
-        return False
-    if _CSS_AT_RULE_RE.match(stripped) or _CSS_ROOT_RE.match(stripped):
-        return "{" in stripped
-    if _CSS_SELECTOR_LINE_RE.match(stripped):
-        return "{" in stripped
-    return False
+    stripped = (line or "").strip()
+    return bool(stripped and not stripped.startswith("# ") and _CSS_BLOCK_START_RE.match(stripped) and "{" in stripped)
 
 
-def _looks_like_css_inline_rule(line: str) -> bool:
-    stripped = line.strip()
+def _looks_like_css_inline(line: str) -> bool:
+    stripped = (line or "").strip()
     if not stripped or stripped.startswith("# "):
         return False
-    if _CSS_ROOT_RE.match(stripped):
+    if stripped.startswith(":root"):
         return True
-    if _CSS_AT_RULE_RE.match(stripped):
-        return "{" in stripped and "}" in stripped
-    if _CSS_SELECTOR_LINE_RE.match(stripped):
+    if _CSS_BLOCK_START_RE.match(stripped):
         return "}" in stripped and ":" in stripped
-    return False
+    return bool(_CSS_PROP_RE.match(stripped) and stripped.endswith(";"))
 
 
 def clean_markdown(markdown: str) -> str:
-    """Remove extraction boilerplate while preserving paragraph layout."""
     if not markdown:
         return ""
-
     lines: list[str] = []
-    previous_blank = False
     body_started = False
-    css_block_depth = 0
-
-    for line in markdown.replace("\r\n", "\n").split("\n"):
-        stripped = line.strip()
-
-        if css_block_depth > 0:
-            css_block_depth += line.count("{") - line.count("}")
-            if css_block_depth <= 0:
-                css_block_depth = 0
+    previous_blank = False
+    css_depth = 0
+    for raw_line in markdown.replace("\r\n", "\n").split("\n"):
+        stripped = raw_line.strip()
+        if css_depth > 0:
+            css_depth += raw_line.count("{") - raw_line.count("}")
+            css_depth = max(css_depth, 0)
             continue
-        if _looks_like_css_inline_rule(stripped):
+        if _looks_like_css_inline(stripped):
             continue
         if _looks_like_css_block_start(stripped):
-            css_block_depth = max(1, line.count("{") - line.count("}"))
+            css_depth = max(1, raw_line.count("{") - raw_line.count("}"))
             continue
-        if _CSS_PROP_LINE_RE.match(stripped) and stripped.endswith(";"):
-            continue
-
-        if _EMPTY_HEADING_PATTERN.match(stripped):
+        if _EMPTY_HEADING_RE.match(stripped):
             continue
         if any(re.search(pattern, stripped, re.IGNORECASE) for pattern in BOILERPLATE_PATTERNS):
             continue
-
-        if _is_post_article_boundary(line):
+        if _is_post_article_boundary(raw_line):
             if body_started:
                 break
             continue
-
         if not stripped:
             if not previous_blank:
                 lines.append("")
             previous_blank = True
             continue
-
-        lines.append(line.rstrip())
-        if _is_substantive_article_body_line(line):
-            body_started = True
+        lines.append(raw_line.rstrip())
+        body_started = body_started or _is_substantive_article_line(raw_line)
         previous_blank = False
-
     return "\n".join(lines).strip()
 
 
 def _pattern_haystack(*parts: str) -> str:
-    """Normalize text for payload-pattern matching after Markdown escaping."""
-    haystack = "\n".join(part or "" for part in parts).lower()
-    return haystack.replace("\\_", "_")
+    return "\n".join(part or "" for part in parts).lower().replace("\\_", "_")
 
 
 def _is_captcha(title: str = "", text: str = "", url: str = "") -> bool:
@@ -212,16 +148,8 @@ def _is_captcha(title: str = "", text: str = "", url: str = "") -> bool:
         return True
     if "captcha" in parsed.path.lower() or "captcha" in parsed.query.lower():
         return True
-    yiche_obfuscated_tokens = (
-        "_xvasu",
-        "_xvtsc",
-        "_xvpfs",
-        "document.cookie",
-        "window['location']",
-        "window.location",
-    )
-    yiche_hit_count = sum(1 for token in yiche_obfuscated_tokens if token in haystack)
-    if yiche_hit_count >= 3 and ("reload" in haystack or "cookie" in haystack):
+    yiche_tokens = ("_xvasu", "_xvtsc", "_xvpfs", "document.cookie", "window['location']", "window.location")
+    if sum(1 for token in yiche_tokens if token in haystack) >= 3 and ("reload" in haystack or "cookie" in haystack):
         return True
     return any(pattern.lower() in haystack for pattern in CAPTCHA_PATTERNS)
 
@@ -229,8 +157,7 @@ def _is_captcha(title: str = "", text: str = "", url: str = "") -> bool:
 def _content_text(markdown: str) -> str:
     text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", markdown or "")
     text = re.sub(r"\[[^\]]+\]\([^)]+\)", "", text)
-    text = re.sub(r"[#>*_`\-\s]+", "", text)
-    return text
+    return re.sub(r"[#>*_`\-\s]+", "", text)
 
 
 def _is_access_wall_payload(title: str = "", text: str = "", url: str = "") -> bool:
@@ -238,21 +165,17 @@ def _is_access_wall_payload(title: str = "", text: str = "", url: str = "") -> b
     text_lower = (text or "").lower()
     compact = re.sub(r"\s+", "", text_lower)
     parsed = urlparse(url or "")
-    url_lower = (url or "").lower()
-
     if "sina visitor system" in title_lower or "sina visitor system" in text_lower:
         return True
-    if parsed.path.lower().startswith("/visitor/visitor") or "/visitor/visitor" in url_lower:
+    if "/visitor/visitor" in parsed.path.lower() or "/visitor/visitor" in (url or "").lower():
         return True
     if "visitor/visitor" in text_lower and ("window.use_fp" in text_lower or "incarnate" in text_lower):
         return True
-
     unauthorized_message = "unauthorizedaccess" in compact or "unauthorized access" in text_lower
     unauthorized_status = bool(re.search(r'"(?:status(?:_?code)?|code)"\s*:\s*401\b', text_lower))
     if unauthorized_message and unauthorized_status and len(_content_text(text)) <= 180:
         return True
-
-    edge_security_markers = (
+    edge_markers = (
         "请求已被拦截",
         "安全策略拦截",
         "在线攻击",
@@ -262,11 +185,7 @@ def _is_access_wall_payload(title: str = "", text: str = "", url: str = "") -> b
         "access denied",
         "request blocked",
     )
-    edge_security_hits = sum(1 for marker in edge_security_markers if marker in text_lower or marker in title_lower)
-    if edge_security_hits >= 2:
-        return True
-
-    return False
+    return sum(1 for marker in edge_markers if marker in text_lower or marker in title_lower) >= 2
 
 
 def is_quality_article(article: Optional[Article], min_chars: int = 100) -> bool:
@@ -280,9 +199,7 @@ def is_quality_article(article: Optional[Article], min_chars: int = 100) -> bool
         return False
     if len(_content_text(markdown)) < min_chars:
         return False
-    normalized_markdown = _pattern_haystack(markdown)
-    captcha_hits = sum(1 for pattern in CAPTCHA_PATTERNS if pattern.lower() in normalized_markdown)
-    if captcha_hits >= 2:
+    if sum(1 for pattern in CAPTCHA_PATTERNS if pattern.lower() in _pattern_haystack(markdown)) >= 2:
         return False
     article.markdown = markdown
     return True
@@ -293,6 +210,7 @@ def best_title_from_html(html: str, fallback: str = "") -> str:
         r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
         r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']',
         r'<meta[^>]+name=["\']twitter:title["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']twitter:title["\']',
         r"<h1\b[^>]*>(.*?)</h1>",
         r"<title\b[^>]*>(.*?)</title>",
     )
@@ -307,7 +225,6 @@ def best_title_from_html(html: str, fallback: str = "") -> str:
     return (fallback or "").strip()
 
 
-# Backward-friendly aliases.
 _clean_markdown = clean_markdown
 _is_quality_article = is_quality_article
 _best_title_from_html = best_title_from_html
