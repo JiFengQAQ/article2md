@@ -259,9 +259,7 @@ def _fetch_image_dimensions(url: str) -> Optional[tuple[int, int]]:
 
 
 def _strip_filtered_markdown_images(markdown: str, filtered_urls: set[str], base_url: str = "") -> str:
-    from markdown import clean_markdown
-
-    return clean_markdown(_rewrite_markdown_images(markdown, base_url=base_url, filtered_urls=filtered_urls)[0])
+    return _rewrite_markdown_images(markdown, base_url=base_url, filtered_urls=filtered_urls)[0]
 
 
 def _is_content_image_dimensions(

@@ -2,6 +2,7 @@ import re
 from unittest.mock import patch
 
 from images import finalize_markdown_and_images
+from markdown import clean_markdown as original_clean_markdown
 
 
 def test_finalize_markdown_and_images_shared_postprocess():
@@ -69,3 +70,48 @@ def test_finalize_markdown_and_images_counts_only_exported_markdown_images():
         "https://example.com/img/second.jpg",
     ]
     assert len(images) == len(markdown_image_unique) == 2
+
+
+def test_finalize_markdown_and_images_calls_clean_markdown_once_after_image_filtering():
+    base_url = "https://example.com/news/42"
+    images = [
+        "https://example.com/img/content.jpg",
+        "https://example.com/img/extra.jpg",
+        "https://example.com/img/tiny.jpg",
+        "https://example.com/img/icon.svg",
+    ]
+    markdown = (
+        "评论\n\n"
+        ":root { --brand: #f00; }\n\n"
+        "正文第一段：这是保留内容，包含足够文字信息和标点。\n\n"
+        "![](/img/content.jpg)\n\n"
+        "![](https://example.com/img/tiny.jpg)\n\n"
+        "![](https://example.com/img/icon.svg)\n\n"
+        "相关推荐\n"
+        "这行推荐区内容必须被截断删除。"
+    )
+
+    dims = {
+        "https://example.com/img/content.jpg": (1280, 800),
+        "https://example.com/img/extra.jpg": (1200, 800),
+        "https://example.com/img/tiny.jpg": (120, 90),
+    }
+
+    with patch("images._fetch_image_dimensions", side_effect=lambda url: dims[url]):
+        with patch("markdown.clean_markdown", side_effect=original_clean_markdown) as clean_spy:
+            final_markdown = finalize_markdown_and_images(
+                markdown=markdown,
+                images=images,
+                base_url=base_url,
+                image_fail_open=False,
+                min_side=480,
+                max_landscape_aspect=5,
+            )
+
+    assert clean_spy.call_count == 1
+    assert "https://example.com/img/content.jpg" in final_markdown
+    assert "tiny.jpg" not in final_markdown
+    assert "icon.svg" not in final_markdown
+    assert ":root" not in final_markdown
+    assert "相关推荐" not in final_markdown
+    assert images == ["https://example.com/img/content.jpg"]
