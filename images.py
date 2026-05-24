@@ -251,7 +251,7 @@ def _fetch_image_dimensions(url: str) -> Optional[tuple[int, int]]:
                     dimensions = _parse_image_dimensions(b"".join(chunks))
                     if dimensions or total >= IMAGE_DIMENSION_BYTE_CAP:
                         break
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         logger.debug("Image dimension probe failed for %s: %s", url, exc)
     with _IMAGE_DIMENSION_CACHE_LOCK:
         _IMAGE_DIMENSION_CACHE[url] = dimensions

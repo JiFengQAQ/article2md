@@ -52,7 +52,6 @@ class HimaCommunityAdapter(PlatformAdapter):
         images.extend(self._parse_media_lists(content_detail))
         images = _dedupe(images)
 
-        # Inject images not yet in markdown so _sync_images_to_markdown keeps them.
         markdown_image_refs = self._markdown_image_refs(markdown)
         for img_url in images:
             normalized = self._normalize_markdown_image_ref(img_url)
@@ -146,7 +145,6 @@ class HimaCommunityAdapter(PlatformAdapter):
             if file_body_urls:
                 images.extend(file_body_urls)
             else:
-                # Fall back to imageUrl only when fileBodyContent has no usable URLs.
                 image_url = (block.get("imageUrl") or "").strip()
                 richtext_url_set = {url.strip() for url in richtext_images if url}
                 if image_url and image_url not in richtext_url_set:
@@ -262,8 +260,6 @@ class HimaCommunityAdapter(PlatformAdapter):
         if any(url in primary_url_set for url in plus_urls):
             return True
 
-        # Common HIMA pattern: fileContent/fileContentPlus are alternate single-item
-        # renditions for the same cover/supplemental slot.
         if file_content_urls and file_content_plus_urls and len(file_content_urls) == 1 and len(file_content_plus_urls) == 1:
             return True
 

@@ -169,15 +169,10 @@ def test_hima_article_block_with_imageurl_but_no_richtext_still_extracts_images(
     article, _ = _extract_with_payload(payload, content_id="1642743")
 
     assert article is not None
-    # poster from richText block[0]
     assert "https://cdn.example.com/poster.jpg" in article.images
-    # body block prefers fileBodyContent over imageUrl
     assert "https://cdn.example.com/body_img.jpg" not in article.images
-    # top-level list prefers fileContent over imageContent
     assert "https://cdn.example.com/top.jpg" not in article.images
-    # fc_item from fileContent
     assert "https://cdn.example.com/fc_item.jpg" in article.images
-    # fbc from block[1] fileBodyContent
     assert "https://cdn.example.com/fbc.jpg" in article.images
     assert len(article.images) == 3
     assert len(re.findall(r"!\[[^\]]*\]\([^\)]+\)", article.markdown)) == 3

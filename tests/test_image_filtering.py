@@ -123,12 +123,12 @@ class ImageFilteringTests(unittest.TestCase):
             "https://example.com/unknown.png",
         ]
         dims = {
-            "https://example.com/keep-landscape.png": (900, 450),  # landscape, w≥480, ratio=2≤5 → keep
-            "https://example.com/keep-portrait.png": (500, 700),   # portrait, h≥480 → keep (no ratio limit)
-            "https://example.com/drop-small.png": (479, 300),      # both < 480 → drop
-            "https://example.com/drop-square.png": (700, 700),     # square → drop
-            "https://example.com/drop-panorama.png": (3000, 500),  # landscape, w≥480, ratio=6>5 → drop
-            "https://example.com/unknown.png": None,               # default fail-closed
+            "https://example.com/keep-landscape.png": (900, 450),
+            "https://example.com/keep-portrait.png": (500, 700),
+            "https://example.com/drop-small.png": (479, 300),
+            "https://example.com/drop-square.png": (700, 700),
+            "https://example.com/drop-panorama.png": (3000, 500),
+            "https://example.com/unknown.png": None,
         }
         with patch.object(image_utils, "_fetch_image_dimensions", side_effect=lambda url: dims[url]):
             markdown = image_utils._strip_svg_and_non_content(
