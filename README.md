@@ -1,19 +1,19 @@
 # article2md
 
-文章链接 -> Markdown 提取器。面向“新闻详情页 / 博客文章 / 论坛长帖 / 常见 SPA 正文页”的泛用抽取，不做域名特判。
+文章链接 -> Markdown提取器。面向“新闻详情页 / 博客文章 / 论坛长帖 / 常见SPA正文页”的泛用抽取，不做域名特判。
 
 ## 架构（仅三类方案）
 
-1. 鸿蒙智行社区内部 API
+1. 鸿蒙智行社区内部API
 - 命中 `omp.uopes.cn` 时，直接走社区接口提取结构化正文与媒体。
 
-2. 外部网站 DOM 主体 + markdownify（通用主路径）
-- 基于静态 HTML 做正文候选容器评分与噪声剪枝。
+2. 外部网站DOM主体 + markdownify（通用主路径）
+- 基于静态HTML做正文候选容器评分与噪声剪枝。
 - 评分综合：文本长度、段落/句子密度、中文标点密度、链接密度惩罚、导航/评论/推荐/分享/广告等负向惩罚。
-- 支持正文 sibling 合并，提升“正文分散在多个兄弟节点”的完整度。
-- 将候选 HTML 转为 Markdown，并统一做后处理清洗。
+- 支持正文sibling合并，提升“正文分散在多个兄弟节点”的完整度。
+- 将候选HTML转为Markdown，并统一做后处理清洗。
 
-3. 困难网站 Playwright 兜底
+3. 困难网站Playwright兜底
 - 对重前端渲染或静态抓取正文不足的页面，使用浏览器渲染后再走通用正文抽取链路。
 
 ## 安装
@@ -65,24 +65,24 @@ tests/
 
 模块职责：
 
-- `extractor.py`: 主 API（`article_to_markdown` / `article_to_dict`）与调度器 `ArticleExtractor`，也可直接作为 CLI 入口运行。
-- `cli.py`: CLI 实现。
+- `extractor.py`: 主API（`article_to_markdown` / `article_to_dict`）与调度器 `ArticleExtractor`，也可直接作为CLI入口运行。
+- `cli.py`: CLI实现。
 - `models.py`: `Article` 数据模型与共享常量。
 - `markdown.py`: HTML -> Markdown、正文清洗、标题提取、质量校验。
-- `images.py`: 图片 URL 提取/规范化、Markdown 图片解析、尺寸解析、正文图过滤。
+- `images.py`: 图片URL提取/规范化、Markdown图片解析、尺寸解析、正文图过滤。
 - `adapters/*`: 平台适配器实现。
-  - `content_candidates.py`: 通用候选正文容器评分、sibling 合并、噪声剪枝、Markdown 质量度量。
+  - `content_candidates.py`: 通用候选正文容器评分、sibling合并、噪声剪枝、Markdown质量度量。
 
 ## 示例
 
 ```bash
-# Markdown 输出
+# Markdown输出
 python extractor.py "https://omp.uopes.cn/static/webapp/share/article_details.html?contentId=1642222"
 
-# JSON 输出
+# JSON输出
 python extractor.py "https://omp.uopes.cn/static/webapp/share/article_details.html?contentId=1642222" --json
 
-# 图片尺寸探测失败时保留图片（默认 fail-closed）
+# 图片尺寸探测失败时保留图片（默认fail-closed）
 python extractor.py "https://example.com/article" --image-fail-open
 ```
 
@@ -90,21 +90,21 @@ python extractor.py "https://example.com/article" --image-fail-open
 
 三条提取路径统一走同一后处理流水线：
 
-1. 保留 Markdown 中按原文结构出现的图片，不把孤儿图片追加到文末。
-2. 从 `images` 与 Markdown 图片引用联合过滤 SVG/非正文图。
+1. 保留Markdown中按原文结构出现的图片，不把孤儿图片追加到文末。
+2. 从 `images` 与Markdown图片引用联合过滤SVG/非正文图。
 3. 清理抽取噪音（空标题、评论区、相关推荐、返回首页、文明发言等后文边界）。
-4. 将 `Article.images` 同步为导出 Markdown 中实际保留的图片引用，保证数量计数准确。
+4. 将 `Article.images` 同步为导出Markdown中实际保留的图片引用，保证数量计数准确。
 
 图片过滤规则：
-`宽 ≥ 480 或 高 ≥ 480，非方图；横向（宽>高）宽高比 ≤ 5，纵向无限制`。
+`宽 ≥ 480或 高 ≥ 480，非方图；横向（宽>高）宽高比 ≤ 5，纵向无限制`。
 
 - 未知尺寸默认 `fail-closed`（删除）。
 - `image_fail_open=True` 或 `--image-fail-open` 时改为保留未知尺寸图片。
 
 ## 能力与局限
 
-- 对常见正文页（新闻详情、博客文章、论坛长帖、常见 SPA 渲染正文）有较强泛化抽取能力。
-- 对强登录墙、强反爬、正文极度碎片化（跨 iframe/Shadow DOM）或高度交互聚合页，可能只能得到短文本或失败。
+- 对常见正文页（新闻详情、博客文章、论坛长帖、常见SPA渲染正文）有较强泛化抽取能力。
+- 对强登录墙、强反爬、正文极度碎片化（跨iframe/Shadow DOM）或高度交互聚合页，可能只能得到短文本或失败。
 - 本项目不做站点特判，不保证在每个站点都达到人工清洗质量。
 
 ## 扩展新平台

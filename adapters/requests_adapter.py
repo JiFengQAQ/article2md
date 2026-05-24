@@ -1,4 +1,4 @@
-"""基于 Requests 的服务端渲染文章页通用适配器"""
+"""基于Requests的服务端渲染文章页通用适配器"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def _decoded_response_text(response: requests.Response) -> str:
-    """在 charset 错误或缺失时用中文友好的兜底编码解码 HTML"""
+    """在charset错误或缺失时用中文友好的兜底编码解码HTML"""
     encoding = (response.encoding or "").lower()
     apparent = response.apparent_encoding or ""
     if apparent and (not encoding or encoding in {"iso-8859-1", "ascii"}):

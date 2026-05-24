@@ -1,4 +1,4 @@
-"""抽取器 CLI 入口"""
+"""抽取器CLI入口"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""复用通用 DOM 抽取管线的 Playwright 渲染适配器"""
+"""复用通用DOM抽取管线的Playwright渲染适配器"""
 
 from __future__ import annotations
 

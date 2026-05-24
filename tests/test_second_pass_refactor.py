@@ -26,12 +26,12 @@ def test_quality_gate_rejects_low_chinese_antibot_payload_without_vendor_tokens(
 
 def test_quality_gate_allows_chinese_article_with_english_product_terms():
     article = Article(
-        title="华为乾崑 ADS 4 技术解析",
+        title="华为乾崑ADS 4技术解析",
         source_url="https://example.com/article/2",
         markdown=(
-            "华为乾崑 ADS 4 在感知链路、规划策略与执行稳定性方面做了系统升级，"
-            "通过 WEWA 架构提升城市道路和高速场景的一体化体验。"
-            "团队表示 OTA 后会继续开放更多调试指标。"
+            "华为乾崑ADS 4在感知链路、规划策略与执行稳定性方面做了系统升级，"
+            "通过WEWA架构提升城市道路和高速场景的一体化体验。"
+            "团队表示OTA后会继续开放更多调试指标。"
         ),
     )
 

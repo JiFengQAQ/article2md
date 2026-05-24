@@ -90,7 +90,7 @@ def test_clean_markdown_truncates_at_post_article_comment_boundary():
     评论（174）
     文明上网理性发言，请遵守评论服务协议
     发表评论
-    查看更多 374 条评论
+    查看更多374条评论
     热门推荐
     相关推荐
     相关阅读
@@ -106,7 +106,7 @@ def test_clean_markdown_truncates_at_post_article_comment_boundary():
     assert "###" not in cleaned
     assert "评论（174）" not in cleaned
     assert "发表评论" not in cleaned
-    assert "查看更多 374 条评论" not in cleaned
+    assert "查看更多374条评论" not in cleaned
     assert "热门推荐" not in cleaned
     assert "相关推荐" not in cleaned
     assert "相关阅读" not in cleaned
@@ -169,7 +169,7 @@ def test_is_post_article_boundary_fast_path_skips_variants_for_normal_body_line(
         "评 论",
         "写 评 论",
         "发 表 评 论",
-        "查 看 全 部 12 条 评 论",
+        "查 看 全 部12条 评 论",
         "推 荐 阅 读",
         "大 家 都 在 看",
         "热 门 文 章",
@@ -256,7 +256,7 @@ def test_clean_markdown_boundary_after_title_but_before_body_does_not_truncate_a
 
 def test_clean_markdown_comment_link_before_body_does_not_truncate_article():
     raw = """
-    # 上市 13 天，鸿蒙智行首款旅行车享界 S9T 大定突破 15000 台
+    # 上市13天，鸿蒙智行首款旅行车享界S9T大定突破15000台
 
     2025/9/30 9:15:12
     来源：[IT之家](https://www.ithome.com/0/886/797.htm)
@@ -267,9 +267,9 @@ def test_clean_markdown_comment_link_before_body_does_not_truncate_article():
 
     感谢IT之家网友提供线索。
 
-    IT之家 9 月 30 日消息，9 月 16 日，鸿蒙智行首款旅行车享界 S9T 正式上市，售价 30.98 万元起。上市 13 天大定已突破 15000 台。
+    IT之家9月30日消息，9月16日，鸿蒙智行首款旅行车享界S9T正式上市，售价30.98万元起。上市13天大定已突破15000台。
 
-    享界 S9T 首批搭载 ADS4，全系标配全维感知系统、全新一代华为途灵平台、华为悦彰音响卓越系列、鸿蒙 ALPS 健康座舱等华为黑科技。
+    享界S9T首批搭载ADS4，全系标配全维感知系统、全新一代华为途灵平台、华为悦彰音响卓越系列、鸿蒙ALPS健康座舱等华为黑科技。
 
     相关阅读：
     这行推荐阅读不该保留。
@@ -277,8 +277,8 @@ def test_clean_markdown_comment_link_before_body_does_not_truncate_article():
 
     cleaned = clean_markdown(raw)
 
-    assert "IT之家 9 月 30 日消息" in cleaned
-    assert "享界 S9T 首批搭载 ADS4" in cleaned
+    assert "IT之家9月30日消息" in cleaned
+    assert "享界S9T首批搭载ADS4" in cleaned
     assert "[评论：]" not in cleaned
     assert "推荐阅读不该保留" not in cleaned
 
@@ -301,7 +301,7 @@ def test_is_quality_article_rejects_yiche_style_obfuscated_cookie_reload_payload
     from models import Article
 
     article = Article(
-        title="华为发布 乾崑 智驾 ADS 4.0",
+        title="华为发布 乾崑 智驾ADS 4.0",
         source_url="https://news.yiche.com/hao/wenzhang/99996310",
         markdown=(
             "var _xvasu = 1104958253; var _xvtsc = 300; var _xvpfs = 'tws2_'; "
@@ -337,16 +337,16 @@ def test_is_quality_article_allows_business_script_with_single_reload_when_artic
     from models import Article
 
     article = Article(
-        title="华为乾崑 ADS 4.0 技术进展解读",
+        title="华为乾崑ADS 4.0技术进展解读",
         source_url="https://xueqiu.com/1461080850/355397242",
         markdown="""
-        华为乾崑 ADS 4.0 在感知链路、规划策略与执行稳定性方面做了系统升级，发布会详细介绍了
+        华为乾崑ADS 4.0在感知链路、规划策略与执行稳定性方面做了系统升级，发布会详细介绍了
         高速与城区场景的一体化策略，并披露了多传感器协同下的冗余安全机制。
 
         研发团队表示，这次升级覆盖了车位到车位的关键环节，重点提升了复杂路口的通行效率、
         异常目标识别能力和弱网环境下的可用性，同时通过持续回归降低高频场景误触发概率。
 
-        页面上的确认按钮会提示用户：若内容未刷新，可执行 window.location.reload 后继续阅读，
+        页面上的确认按钮会提示用户：若内容未刷新，可执行window.location.reload后继续阅读，
         该提示仅用于常规前端交互，不代表任何访问验证或反爬流程。
 
         产品团队还强调会继续开放更多调试指标，方便开发者在真实交通环境下定位问题并验证修复效果，
@@ -398,9 +398,9 @@ def test_is_quality_article_rejects_generic_edge_security_block_page():
         markdown=(
             "请求已被拦截\n"
             "请求已被站点的安全策略拦截。本站点已启用安全防护服务以抵御在线攻击，"
-            "本次访问已被限制。若此页面持续出现，请联系网站管理员，并提供当前页面显示的请求 ID。\n"
-            "请求 ID: 9291747337293192112 请求时间: 2026-05-23 06:03:30 UTC+8\n"
-            "由 Tencent Cloud EdgeOne 提供防护"
+            "本次访问已被限制。若此页面持续出现，请联系网站管理员，并提供当前页面显示的请求ID。\n"
+            "请求ID: 9291747337293192112请求时间: 2026-05-23 06:03:30 UTC+8\n"
+            "由Tencent Cloud EdgeOne提供防护"
         ),
     )
 

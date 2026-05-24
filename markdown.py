@@ -1,4 +1,4 @@
-"""Markdown 转换, 清理和文章质量检查"""
+"""Markdown转换, 清理和文章质量检查"""
 
 from __future__ import annotations
 
@@ -206,9 +206,9 @@ def _is_access_wall_payload(title: str = "", text: str = "", url: str = "") -> b
         "请求已被拦截",
         "安全策略拦截",
         "在线攻击",
-        "请求 id",
+        "请求id",
         "tencent cloud edgeone",
-        "edgeone web 安全分析",
+        "edgeone web安全分析",
         "access denied",
         "request blocked",
     )

@@ -1,4 +1,4 @@
-"""公开抽取器 API 和适配器编排"""
+"""公开抽取器API和适配器编排"""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def article_to_markdown(
     retries: int = DEFAULT_RETRIES,
     image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
 ) -> Optional[str]:
-    """单行 API: URL -> markdown"""
+    """单行API: URL -> markdown"""
     extractor = _choose_extractor(timeout=timeout, retries=retries, image_fail_open=image_fail_open)
     article = extractor.extract(url)
     return article.markdown if article else None
