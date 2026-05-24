@@ -110,6 +110,6 @@ class RequestsAdapter(PlatformAdapter):
             source_url=url,
             image_fail_open=self.image_fail_open,
         )
-        if article and is_quality_article(article, min_chars=200):
+        if article and is_quality_article(article, min_chars=100):
             return article
         return None

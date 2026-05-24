@@ -47,7 +47,7 @@ class PlaywrightAdapter(PlatformAdapter):
                 break
             try:
                 article = self._extract_once(url, sync_playwright, remaining)
-                if article and is_quality_article(article, min_chars=200):
+                if article and is_quality_article(article, min_chars=100):
                     return article
                 logger.info("Playwright extraction failed quality validation: %s", url)
             except Exception as exc:
