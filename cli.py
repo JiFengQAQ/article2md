@@ -1,4 +1,4 @@
-"""CLI entrypoint for the extractor."""
+"""抽取器 CLI 入口."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Public extractor API and adapter orchestration."""
+"""公开抽取器 API 和适配器编排."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class ArticleExtractor:
-    """Auto-select adapter by platform and fallback chain."""
+    """按平台和兜底链自动选择适配器."""
 
     def __init__(
         self,
@@ -70,7 +70,7 @@ def article_to_markdown(
     retries: int = DEFAULT_RETRIES,
     image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
 ) -> Optional[str]:
-    """One-liner API: URL -> markdown."""
+    """单行 API: URL -> markdown."""
     extractor = _choose_extractor(timeout=timeout, retries=retries, image_fail_open=image_fail_open)
     article = extractor.extract(url)
     return article.markdown if article else None
@@ -82,7 +82,7 @@ def article_to_dict(
     retries: int = DEFAULT_RETRIES,
     image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
 ) -> Optional[dict]:
-    """URL -> structured article dict."""
+    """URL -> 结构化文章字典."""
     extractor = _choose_extractor(timeout=timeout, retries=retries, image_fail_open=image_fail_open)
     article = extractor.extract(url)
     if not article:

@@ -1,4 +1,4 @@
-"""Generic content-candidate scoring for fallback extraction."""
+"""用于兜底抽取的通用内容候选评分."""
 
 from __future__ import annotations
 

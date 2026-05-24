@@ -1,4 +1,4 @@
-"""Data models and shared configuration constants."""
+"""数据模型和共享配置常量."""
 
 from dataclasses import dataclass, field
 

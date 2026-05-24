@@ -1,4 +1,4 @@
-"""HIMA / AITO community adapter."""
+"""HIMA / AITO 社区适配器."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class HimaCommunityAdapter(PlatformAdapter):
-    """Extract articles from HIMA/AITO community share pages."""
+    """从 HIMA/AITO 社区分享页抽取文章."""
 
     API = "https://omp.uopes.cn/xcar/omp/xbs/cc/queryPostShareDetail"
 

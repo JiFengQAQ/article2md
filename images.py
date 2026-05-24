@@ -1,4 +1,4 @@
-"""Image extraction, normalization, and content-image filtering."""
+"""图片抽取, 规范化和正文图片过滤."""
 
 from __future__ import annotations
 

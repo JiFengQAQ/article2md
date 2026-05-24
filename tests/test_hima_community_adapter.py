@@ -76,7 +76,7 @@ def test_hima_community_adapter_parses_sample_payload():
 
 
 def test_hima_dynamic_post_extracts_images_from_imagecontent_and_filecontent():
-    """Prefer fileContent over imageContent for dynamics to avoid rendition duplicates."""
+    """动态内容优先使用 fileContent 而不是 imageContent, 避免重复版本图片."""
     payload = {
         "code": 0,
         "contentDetail": {
@@ -136,7 +136,7 @@ def test_hima_richtext_imageurl_same_url_is_not_duplicated():
 
 
 def test_hima_article_block_with_imageurl_but_no_richtext_still_extracts_images():
-    """Prefer fileBodyContent over imageUrl in body blocks."""
+    """正文块优先使用 fileBodyContent 而不是 imageUrl."""
     payload = {
         "code": 0,
         "contentDetail": {
