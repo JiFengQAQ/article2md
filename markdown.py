@@ -12,6 +12,19 @@ _EMPTY_HEADING_RE = re.compile(r"^#{1,6}\s*$")
 _IMAGE_LINE_RE = re.compile(r"^!\[[^\]]*\]\([^)]+\)$")
 _DATE_PREFIX_RE = re.compile(r"^\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}")
 _META_PREFIX_RE = re.compile(r"^(?:来源|作者|责编|编辑|发布于|发布时间|责任编辑)[:：]")
+_QUOTE_PREFIX_RE = re.compile(r"^(?:>\s*)+")
+_HEADING_PREFIX_RE = re.compile(r"^#{1,6}\s*")
+_LIST_PREFIX_RE = re.compile(r"^(?:[*+-]|\d+\.)\s+")
+_MARKDOWN_IMAGE_INLINE_RE = re.compile(r"!\[([^\]]*)\]\([^)]+\)")
+_MARKDOWN_LINK_INLINE_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+_MARKDOWN_FORMAT_RE = re.compile(r"[`*_~]+")
+_WHITESPACE_RE = re.compile(r"\s+")
+_BOUNDARY_COMPACT_RE = re.compile(r"[\s\-|｜:：·•]+")
+_BOUNDARY_COMPACT_TRIGGER_RE = re.compile(
+    r"(?:评论|写评论|发表评论|发布评论|参与评论|登录后评论|评论加载中|"
+    r"查看更多|查看全部|热门推荐|相关推荐|相关阅读|推荐阅读|猜你喜欢|大家都在看|相关内容|热门文章|"
+    r"返回首页|回到首页|回首页看更多|返回频道|返回列表|文明上网理性发言|理性发言|请遵守)"
+)
 _POST_BOUNDARY_RE = [
     re.compile(r"^(?:评论|评论区|网友评论|全部评论|最新评论)(?:[（(\[【]?\s*\d+\s*[）)\]】]?)?$"),
     re.compile(r"^(?:写评论|发表评论|发布评论|参与评论|登录后评论|评论加载中).*$"),
@@ -42,24 +55,35 @@ def html_to_markdown(html: str) -> str:
 
 def _line_text_for_matching(line: str) -> str:
     text = (line or "").strip()
-    text = re.sub(r"^(?:>\s*)+", "", text)
-    text = re.sub(r"^#{1,6}\s*", "", text)
-    text = re.sub(r"^(?:[*+-]|\d+\.)\s+", "", text)
-    for _ in range(3):
-        replaced = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
-        replaced = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", replaced)
-        if replaced == text:
-            break
-        text = replaced
-    return re.sub(r"\s+", " ", re.sub(r"[`*_~]+", "", text)).strip()
+    text = _QUOTE_PREFIX_RE.sub("", text)
+    text = _HEADING_PREFIX_RE.sub("", text)
+    text = _LIST_PREFIX_RE.sub("", text)
+    if "](" in text:
+        for _ in range(3):
+            replaced = _MARKDOWN_IMAGE_INLINE_RE.sub(r"\1", text)
+            replaced = _MARKDOWN_LINK_INLINE_RE.sub(r"\1", replaced)
+            if replaced == text:
+                break
+            text = replaced
+    return _WHITESPACE_RE.sub(" ", _MARKDOWN_FORMAT_RE.sub("", text)).strip()
 
 
 def _boundary_variants(line: str) -> tuple[str, str]:
     normalized = _line_text_for_matching(line)
-    return normalized, re.sub(r"[\s\-|｜:：·•]+", "", normalized)
+    return normalized, _BOUNDARY_COMPACT_RE.sub("", normalized)
+
+
+def _has_boundary_compact_trigger(stripped: str) -> bool:
+    compact_raw = _BOUNDARY_COMPACT_RE.sub("", stripped)
+    return bool(_BOUNDARY_COMPACT_TRIGGER_RE.search(compact_raw))
 
 
 def _is_post_article_boundary(line: str) -> bool:
+    stripped = (line or "").strip()
+    if not stripped:
+        return False
+    if not _has_boundary_compact_trigger(stripped):
+        return False
     normalized, compact = _boundary_variants(line)
     return bool(normalized) and any(pattern.match(normalized) or pattern.match(compact) for pattern in _POST_BOUNDARY_RE)
 
@@ -73,7 +97,7 @@ def _is_body_content_line(line: str) -> bool:
     text = _line_text_for_matching(stripped)
     if not text:
         return False
-    chars = len(re.sub(r"\s+", "", text))
+    chars = len(_WHITESPACE_RE.sub("", text))
     return chars >= 24 or (chars >= 14 and bool(re.search(r"[，。！？；：,.!?;:]", text)))
 
 
@@ -82,7 +106,7 @@ def _is_substantive_article_line(line: str) -> bool:
     if stripped.startswith("#") or _IMAGE_LINE_RE.match(stripped) or not _is_body_content_line(stripped):
         return False
     text = _line_text_for_matching(stripped)
-    compact = re.sub(r"\s+", "", text)
+    compact = _WHITESPACE_RE.sub("", text)
     return not (_DATE_PREFIX_RE.match(compact) or _META_PREFIX_RE.match(text) or _is_post_article_boundary(stripped))
 
 
@@ -166,7 +190,7 @@ def _chinese_char_ratio(*parts: str) -> float:
 def _is_access_wall_payload(title: str = "", text: str = "", url: str = "") -> bool:
     title_lower = (title or "").strip().lower()
     text_lower = (text or "").lower()
-    compact = re.sub(r"\s+", "", text_lower)
+    compact = _WHITESPACE_RE.sub("", text_lower)
     parsed = urlparse(url or "")
     if "sina visitor system" in title_lower or "sina visitor system" in text_lower:
         return True

@@ -2,6 +2,8 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
+
 from markdown import clean_markdown, html_to_markdown
 
 
@@ -149,6 +151,88 @@ def test_clean_markdown_normalizes_markdown_links_before_boundary_match():
     assert "这是正文第二段，包含更多信息。" in cleaned
     assert "相关推荐" not in cleaned
     assert "推荐区文案" not in cleaned
+
+
+def test_is_post_article_boundary_fast_path_skips_variants_for_normal_body_line(monkeypatch):
+    import markdown as markdown_module
+
+    def _should_not_be_called(_: str) -> tuple[str, str]:
+        raise AssertionError("_boundary_variants should not run for ordinary body text")
+
+    monkeypatch.setattr(markdown_module, "_boundary_variants", _should_not_be_called)
+    assert not markdown_module._is_post_article_boundary("这是一行普通正文，包含足够文字和标点。")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "评 论",
+        "写 评 论",
+        "发 表 评 论",
+        "查 看 全 部 12 条 评 论",
+        "推 荐 阅 读",
+        "大 家 都 在 看",
+        "热 门 文 章",
+        "返 回 首 页",
+        "返 回 频 道",
+        "文 明 上 网 理 性 发 言",
+    ],
+)
+def test_is_post_article_boundary_detects_compact_separator_variants(line):
+    import markdown as markdown_module
+
+    assert markdown_module._is_post_article_boundary(line)
+
+
+def test_clean_markdown_truncates_at_separator_style_recommendation_boundary():
+    raw = """
+    # 正文标题
+    这是正文第一段，包含关键背景和事实信息。
+    这是正文第二段，继续描述文章主线内容。
+    热-门-推-荐
+    这行推荐内容不应该保留。
+    """
+
+    cleaned = clean_markdown(raw)
+
+    assert "这是正文第一段，包含关键背景和事实信息。" in cleaned
+    assert "这是正文第二段，继续描述文章主线内容。" in cleaned
+    assert "热-门-推-荐" not in cleaned
+    assert "推荐内容不应该保留" not in cleaned
+
+
+def test_clean_markdown_truncates_at_spaced_recommendation_boundary():
+    raw = """
+    # 正文标题
+    这是正文第一段，包含关键背景和事实信息。
+    这是正文第二段，继续描述文章主线内容。
+    相 关 推 荐
+    这行推荐内容不应该保留。
+    """
+
+    cleaned = clean_markdown(raw)
+
+    assert "这是正文第一段，包含关键背景和事实信息。" in cleaned
+    assert "这是正文第二段，继续描述文章主线内容。" in cleaned
+    assert "相 关 推 荐" not in cleaned
+    assert "推荐内容不应该保留" not in cleaned
+
+
+def test_clean_markdown_truncates_at_comment_markdown_link_boundary_after_body():
+    raw = """
+    # 正文标题
+    正文第一段：这是实际内容起点，应该被保留。
+    正文第二段：这段内容也应该被保留。
+    [评论：](#post_comm)
+    这行评论区内容不应该保留。
+    """
+
+    cleaned = clean_markdown(raw)
+
+    assert "正文第一段：这是实际内容起点，应该被保留。" in cleaned
+    assert "正文第二段：这段内容也应该被保留。" in cleaned
+    assert "[评论：](#post_comm)" not in cleaned
+    assert "评论区内容不应该保留" not in cleaned
 
 
 def test_clean_markdown_boundary_after_title_but_before_body_does_not_truncate_article():
