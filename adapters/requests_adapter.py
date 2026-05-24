@@ -1,4 +1,4 @@
-"""基于 Requests 的服务端渲染文章页通用适配器."""
+"""基于 Requests 的服务端渲染文章页通用适配器"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def _decoded_response_text(response: requests.Response) -> str:
-    """在 charset 错误或缺失时用中文友好的兜底编码解码 HTML."""
+    """在 charset 错误或缺失时用中文友好的兜底编码解码 HTML"""
     encoding = (response.encoding or "").lower()
     apparent = response.apparent_encoding or ""
     if apparent and (not encoding or encoding in {"iso-8859-1", "ascii"}):
@@ -78,7 +78,7 @@ def build_article_from_html(
 
 
 class RequestsAdapter(PlatformAdapter):
-    """服务端渲染页面的快速通用兜底适配器."""
+    """服务端渲染页面的快速通用兜底适配器"""
 
     def __init__(self, timeout: int = DEFAULT_TIMEOUT, image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN):
         self.timeout = timeout

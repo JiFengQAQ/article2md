@@ -1,4 +1,4 @@
-"""适配器实现."""
+"""适配器实现"""
 
 from adapters.base import PlatformAdapter
 from adapters.hima_community_adapter import HimaCommunityAdapter

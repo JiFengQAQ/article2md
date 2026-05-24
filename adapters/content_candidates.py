@@ -1,4 +1,4 @@
-"""用于兜底抽取的通用内容候选评分."""
+"""用于兜底抽取的通用内容候选评分"""
 
 from __future__ import annotations
 

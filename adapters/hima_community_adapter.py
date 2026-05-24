@@ -1,4 +1,4 @@
-"""HIMA / AITO 社区适配器."""
+"""HIMA / AITO 社区适配器"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class HimaCommunityAdapter(PlatformAdapter):
-    """从 HIMA/AITO 社区分享页抽取文章."""
+    """从 HIMA/AITO 社区分享页抽取文章"""
 
     API = "https://omp.uopes.cn/xcar/omp/xbs/cc/queryPostShareDetail"
 
@@ -201,7 +201,7 @@ class HimaCommunityAdapter(PlatformAdapter):
         video_cover = (block.get("videoCoverUrl") or "").strip()
         parts: list[str] = []
         if video_url:
-            parts.append(f"> 📹 视频: [{video_url}]({video_url})\n")
+            parts.append(f"> 视频: [{video_url}]({video_url})\n")
         if video_cover:
             parts.append(f"![视频封面]({video_cover})\n")
         return parts
@@ -305,8 +305,8 @@ class HimaCommunityAdapter(PlatformAdapter):
         if not video_url:
             return markdown
         if markdown:
-            return f"{markdown}\n\n> 📹 视频: {video_url}".strip()
-        return f"> 📹 视频: {video_url}"
+            return f"{markdown}\n\n> 视频: {video_url}".strip()
+        return f"> 视频: {video_url}"
 
     @staticmethod
     def _fallback_title(

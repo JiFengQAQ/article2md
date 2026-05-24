@@ -1,4 +1,4 @@
-"""复用通用 DOM 抽取管线的 Playwright 渲染适配器."""
+"""复用通用 DOM 抽取管线的 Playwright 渲染适配器"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class PlaywrightAdapter(PlatformAdapter):
-    """动态页面的通用浏览器渲染兜底适配器."""
+    """动态页面的通用浏览器渲染兜底适配器"""
 
     def __init__(
         self,

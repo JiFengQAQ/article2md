@@ -1,4 +1,4 @@
-"""Markdown 转换, 清理和文章质量检查."""
+"""Markdown 转换, 清理和文章质量检查"""
 
 from __future__ import annotations
 
