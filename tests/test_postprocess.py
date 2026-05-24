@@ -28,7 +28,7 @@ def test_finalize_markdown_and_images_shared_postprocess():
             image_fail_open=False,
         )
 
-    assert "同意并继续" not in final_markdown
+    assert "同意并继续" in final_markdown
     assert "keep.png" in final_markdown
     assert "add.png" not in final_markdown
     assert "small.png" not in final_markdown

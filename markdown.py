@@ -6,7 +6,7 @@ import re
 from typing import Optional
 from urllib.parse import urlparse
 from markdownify import markdownify
-from models import Article, BOILERPLATE_PATTERNS, CAPTCHA_PATTERNS
+from models import Article, CAPTCHA_PATTERNS
 
 _EMPTY_HEADING_RE = re.compile(r"^#{1,6}\s*$")
 _IMAGE_LINE_RE = re.compile(r"^!\[[^\]]*\]\([^)]+\)$")
@@ -121,8 +121,6 @@ def clean_markdown(markdown: str) -> str:
             css_depth = max(1, raw_line.count("{") - raw_line.count("}"))
             continue
         if _EMPTY_HEADING_RE.match(stripped):
-            continue
-        if any(re.search(pattern, stripped, re.IGNORECASE) for pattern in BOILERPLATE_PATTERNS):
             continue
         if _is_post_article_boundary(raw_line):
             if body_started:

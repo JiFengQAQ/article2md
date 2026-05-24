@@ -37,18 +37,6 @@ CAPTCHA_PATTERNS = (
     "__ac_nonce",
 )
 
-BOILERPLATE_PATTERNS = (
-    r"^\s*同意并继续\s*$",
-    r"^\s*请登录.*$",
-    r"^\s*登录后.*$",
-    r"^\s*打开.*?APP.*$",
-    r"^\s*下载.*?APP.*$",
-    r"^\s*cookie\s+.*$",
-    r"^\s*Cookies?\s+.*$",
-    r"^\s*继续浏览.*$",
-)
-
-
 @dataclass
 class Article:
     title: str = ""
