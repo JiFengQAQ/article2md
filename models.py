@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 
 DEFAULT_TIMEOUT = 10
-DEFAULT_RETRIES = 2
+DEFAULT_RETRIES = 1
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
