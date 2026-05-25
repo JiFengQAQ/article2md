@@ -184,6 +184,34 @@ def test_is_post_article_boundary_detects_compact_separator_variants(line):
     assert markdown_module._is_post_article_boundary(line)
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "热门阅读",
+        "相关新闻",
+        "今日热点",
+        "频道热点",
+        "热门排行",
+        "文章标签",
+        "文中提及",
+        "作者其他作品",
+        "上一篇",
+        "下一篇",
+        "加载中...",
+        "免责声明：本文内容仅供参考",
+        "特别声明：以上内容为自媒体平台用户上传",
+        "Notice: The content above is uploaded by a user",
+        "（责任编辑：小李）",
+        "版权保护声明",
+        "版权所有",
+    ],
+)
+def test_is_post_article_boundary_detects_generic_category_markers(line):
+    import markdown as markdown_module
+
+    assert markdown_module._is_post_article_boundary(line)
+
+
 def test_clean_markdown_truncates_at_separator_style_recommendation_boundary():
     raw = """
     # 正文标题
@@ -281,6 +309,31 @@ def test_clean_markdown_comment_link_before_body_does_not_truncate_article():
     assert "享界S9T首批搭载ADS4" in cleaned
     assert "[评论：]" not in cleaned
     assert "推荐阅读不该保留" not in cleaned
+
+
+@pytest.mark.parametrize("boundary_line", ["8小时前", "15分钟前", "昨天 · 浏览 1.2万", "浏览 3456"])
+def test_clean_markdown_truncates_at_feed_metadata_boundary_after_body(boundary_line):
+    raw = f"""
+    # 正文标题
+    正文第一段：这一段正文信息完整，包含足够多细节和标点，确保正文状态已经开始。
+    正文第二段：这一段继续提供背景、事实与补充信息，用于验证边界识别后的截断行为。
+    {boundary_line}
+    这行尾部内容不应该被保留。
+    """
+
+    cleaned = clean_markdown(raw)
+
+    assert "正文第一段：这一段正文信息完整" in cleaned
+    assert "正文第二段：这一段继续提供背景" in cleaned
+    assert boundary_line not in cleaned
+    assert "尾部内容不应该被保留" not in cleaned
+
+
+def test_is_post_article_boundary_does_not_trigger_for_normal_sentence_with_feed_terms():
+    import markdown as markdown_module
+
+    line = "团队昨天完成了联调，24小时前发现的问题已经修复，正文仍在继续讲述测试结论。"
+    assert not markdown_module._is_post_article_boundary(line)
 
 
 def test_is_quality_article_rejects_generic_antibot_javascript_payload():

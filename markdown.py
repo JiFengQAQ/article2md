@@ -20,26 +20,49 @@ _MARKDOWN_LINK_INLINE_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
 _MARKDOWN_FORMAT_RE = re.compile(r"[`*_~]+")
 _WHITESPACE_RE = re.compile(r"\s+")
 _BOUNDARY_COMPACT_RE = re.compile(r"[\s\-|｜:：·•]+")
-_BOUNDARY_COMPACT_TRIGGER_RE = re.compile(
-    r"(?:评论|写评论|发表评论|发布评论|参与评论|登录后评论|评论加载中|"
-    r"查看更多|查看全部|热门推荐|相关推荐|相关阅读|推荐阅读|热门阅读|相关新闻|今日热点|频道热点|热门排行|"
-    r"猜你喜欢|大家都在看|相关内容|热门文章|文章标签|文中提及|作者其他作品|上一篇|下一篇|加载中|"
-    r"浏览\s*\d|小时前|分钟前|前天|昨天|"
-    r"免责声明|责任编辑|版权保护|版权所有|返回首页|回到首页|回首页看更多|返回频道|返回列表|"
-    r"文明上网理性发言|理性发言|请遵守)"
+_COMMENT_MARKERS = ("评论", "评论区", "网友评论", "全部评论", "最新评论")
+_COMMENT_ACTION_MARKERS = ("写评论", "发表评论", "发布评论", "参与评论", "登录后评论", "评论加载中")
+_RECOMMENDATION_TAIL_MARKERS = ("热门推荐", "相关推荐", "相关阅读", "推荐阅读", "热门阅读", "相关新闻", "今日热点", "频道热点", "热门排行", "猜你喜欢", "大家都在看", "相关内容", "热门文章", "加载中")
+_NAV_RELATIONSHIP_MARKERS = ("返回首页", "回到首页", "回首页看更多", "返回频道", "返回列表", "上一篇", "下一篇", "文章标签", "文中提及", "作者其他作品")
+_LEGAL_PREFIX_MARKERS = ("文明上网理性发言", "理性发言", "免责声明", "特别声明", "Notice", "版权保护", "版权所有")
+_LEGAL_EDITORIAL_MARKERS = (*_LEGAL_PREFIX_MARKERS, "请遵守", "责任编辑")
+_COMMENT_TAIL_MARKERS = ("查看更多", "查看全部")
+_FEED_META_TRIGGER_FRAGMENTS = ("浏览", "小时前", "分钟前", "昨天", "前天")
+_BOUNDARY_MARKER_GROUPS = (_COMMENT_MARKERS, _COMMENT_ACTION_MARKERS, _COMMENT_TAIL_MARKERS, _RECOMMENDATION_TAIL_MARKERS, _NAV_RELATIONSHIP_MARKERS, _LEGAL_EDITORIAL_MARKERS)
+
+def _escaped_alternation(terms: tuple[str, ...]) -> str:
+    """生成经过转义的正则分支"""
+    return "|".join(re.escape(term) for term in terms)
+
+
+def _compile_boundary_compact_trigger_pattern(
+    marker_groups: tuple[tuple[str, ...], ...],
+    feed_fragments: tuple[str, ...],
+) -> re.Pattern[str]:
+    """编译边界快速触发正则"""
+    compact_terms = [_BOUNDARY_COMPACT_RE.sub("", term) for group in marker_groups for term in group]
+    escaped = _escaped_alternation(tuple(dict.fromkeys((*compact_terms, *feed_fragments))))
+    return re.compile(rf"(?:{escaped})")
+
+
+_FEED_LIST_METADATA_PATTERNS = (
+    re.compile(r"^\d+\s*(?:小时前|分钟前)$"),
+    re.compile(r"^(?:昨天|前天)\s*[·•|｜:：]\s*浏览.*$"),
+    re.compile(r"^浏览\s*[·•|｜:：]\s*\d.*$"),
+    re.compile(r"^浏览\s*\d.*$"),
 )
-_POST_BOUNDARY_RE = [
-    re.compile(r"^(?:评论|评论区|网友评论|全部评论|最新评论)(?:[（(\[【]?\s*\d+\s*[）)\]】]?)?$"),
-    re.compile(r"^(?:写评论|发表评论|发布评论|参与评论|登录后评论|评论加载中).*$"),
-    re.compile(r"^(?:查看更多|查看全部)\s*\d+\s*条?评论.*$"),
-    re.compile(
-        r"^(?:热门推荐|相关推荐|相关阅读|推荐阅读|热门阅读|相关新闻|今日热点|频道热点|热门排行|"
-        r"猜你喜欢|大家都在看|相关内容|热门文章|加载中(?:[.。…]{0,3})?|"
-        r"\d+\s*(?:小时前|分钟前)|(?:昨天|前天)\s*[·•|｜:：]\s*浏览.*|浏览\s*[·•|｜:：]\s*\d.*|浏览\d.*)$"
-    ),
-    re.compile(r"^(?:返回首页|回到首页|回首页看更多|返回频道|返回列表|上一篇|下一篇|文章标签|文中提及|作者其他作品).*$"),
-    re.compile(r"^(?:文明上网理性发言|理性发言.*|请遵守.*评论.*协议.*|免责声明.*|(?:[（(\[【]\s*)?责任编辑[:：]?.*(?:[）)\]】])?|版权保护.*|版权所有.*)$"),
-]
+_POST_BOUNDARY_PATTERNS = (
+    re.compile(rf"^(?:{_escaped_alternation(_COMMENT_MARKERS)})(?:[（(\[【]?\s*\d+\s*[）)\]】]?)?$"),
+    re.compile(rf"^(?:{_escaped_alternation(_COMMENT_ACTION_MARKERS)}).*$"),
+    re.compile(rf"^(?:{_escaped_alternation(_COMMENT_TAIL_MARKERS)})\s*\d+\s*条?评论.*$"),
+    re.compile(rf"^(?:{_escaped_alternation(_RECOMMENDATION_TAIL_MARKERS)})(?:[.。…]{{0,3}})?$"),
+    re.compile(rf"^(?:{_escaped_alternation(_NAV_RELATIONSHIP_MARKERS)}).*$"),
+    re.compile(rf"^(?:{_escaped_alternation(_LEGAL_PREFIX_MARKERS)}).*$"),
+    re.compile(r"^请遵守.*评论.*协议.*$"),
+    re.compile(rf"^(?:[（(\[【]\s*)?{re.escape('责任编辑')}(?:[:：]?.*)?(?:[）)\]】])?$"),
+    *_FEED_LIST_METADATA_PATTERNS,
+)
+_BOUNDARY_COMPACT_TRIGGER_RE = _compile_boundary_compact_trigger_pattern(_BOUNDARY_MARKER_GROUPS, _FEED_META_TRIGGER_FRAGMENTS)
 _CSS_BLOCK_START_RE = re.compile(
     r"^\s*(?:@(?:media|supports|keyframes|font-face|layer|container)\b[^{}]*|:root\b|[.#]?[a-z0-9_:-][^{}]*)\s*\{",
     re.IGNORECASE,
@@ -92,7 +115,7 @@ def _is_post_article_boundary(line: str) -> bool:
     if not _has_boundary_compact_trigger(stripped):
         return False
     normalized, compact = _boundary_variants(line)
-    return bool(normalized) and any(pattern.match(normalized) or pattern.match(compact) for pattern in _POST_BOUNDARY_RE)
+    return bool(normalized) and any(pattern.match(normalized) or pattern.match(compact) for pattern in _POST_BOUNDARY_PATTERNS)
 
 
 def _is_body_content_line(line: str) -> bool:
