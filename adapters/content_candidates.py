@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 import re
 from typing import Any, Optional
-from markdown import clean_markdown
+from markdown import clean_markdown, _ALL_NEGATIVE_TEXT_HINTS as _NEGATIVE_TEXT_HINTS
 
 _TEXT_XPATH = ".//text()[not(ancestor::script) and not(ancestor::style) and not(ancestor::noscript) and not(ancestor::template)]"
 _PUNCT_RE = re.compile(r"[，。！？；：、,.!?;:]")
@@ -42,42 +42,6 @@ _NEGATIVE_ATTR_HINTS = (
     "hot",
     "rank",
     "copyright",
-)
-_NEGATIVE_TEXT_HINTS = (
-    "相关阅读",
-    "相关推荐",
-    "推荐阅读",
-    "热门推荐",
-    "热门阅读",
-    "相关新闻",
-    "今日热点",
-    "频道热点",
-    "热门排行",
-    "猜你喜欢",
-    "大家都在看",
-    "文章标签",
-    "文中提及",
-    "作者其他作品",
-    "上一篇",
-    "下一篇",
-    "加载中",
-    "浏览 ·",
-    "浏览·",
-    "小时前",
-    "分钟前",
-    "前天",
-    "昨天",
-    "网友评论",
-    "评论区",
-    "登录后评论",
-    "文明上网理性发言",
-    "免责声明",
-    "责任编辑",
-    "版权保护",
-    "版权所有",
-    "返回首页",
-    "回到首页",
-    "广告",
 )
 _CONTENT_KEYWORDS = ("表示", "认为", "指出", "介绍", "记者", "报道", "发布", "消息", "此外", "同时", "according", "report")
 
