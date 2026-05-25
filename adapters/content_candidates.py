@@ -121,7 +121,7 @@ def _stats_from_text(text: str, paragraph_count: int, link_text: str = "") -> Te
         sentences=_sentence_count(text),
         punct_density=len(_PUNCT_RE.findall(text)) / max(chars, 1),
         link_density=_char_count(link_text) / max(chars, 1),
-        negative_text_hits=sum(text.count(keyword) for keyword in _NEGATIVE_TEXT_HINTS),
+        negative_text_hits=sum(text.count(keyword) for group in _NEGATIVE_TEXT_HINTS for keyword in group),
     )
 
 
