@@ -13,7 +13,6 @@ import requests
 from models import (
     IMAGE_ASPECT_RATIO_MAX,
     IMAGE_DIMENSION_BYTE_CAP,
-    IMAGE_DIMENSION_FAIL_OPEN,
     IMAGE_DIMENSION_MIN_SIDE,
     IMAGE_DIMENSION_TIMEOUT,
     IMAGE_DIMENSION_WORKERS,
@@ -281,7 +280,6 @@ def _strip_svg_and_non_content(
     min_side: int = 0,
     max_landscape_aspect: float = 0,
     base_url: str = "",
-    fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
     dimension_fetcher: Optional[Callable[[str], Optional[tuple[int, int]]]] = None,
 ) -> str:
     fetcher = dimension_fetcher or _fetch_image_dimensions
@@ -307,12 +305,10 @@ def _strip_svg_and_non_content(
                     dimensions = future.result()
                 except Exception as exc:
                     logger.debug("Image dimension worker failed for %s: %s", url, exc)
-                    if not fail_open:
-                        filtered.add(url)
+                    filtered.add(url)
                     continue
                 if dimensions is None:
-                    if not fail_open:
-                        filtered.add(url)
+                    filtered.add(url)
                     continue
                 if not _is_content_image_dimensions(dimensions, min_side=min_side, max_landscape_aspect=max_landscape_aspect):
                     filtered.add(url)
@@ -328,7 +324,6 @@ def finalize_markdown_and_images(
     markdown: str,
     images: list[str],
     base_url: str,
-    image_fail_open: bool,
     min_side: int = IMAGE_DIMENSION_MIN_SIDE,
     max_landscape_aspect: float = IMAGE_ASPECT_RATIO_MAX,
 ) -> str:
@@ -342,7 +337,6 @@ def finalize_markdown_and_images(
         min_side=min_side,
         max_landscape_aspect=max_landscape_aspect,
         base_url=base_url,
-        fail_open=image_fail_open,
     )
     markdown = clean_markdown(markdown)
     images[:] = _rewrite_markdown_images(markdown, base_url=base_url)[1]

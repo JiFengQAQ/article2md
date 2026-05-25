@@ -12,7 +12,7 @@ import requests
 
 from images import _dedupe, finalize_markdown_and_images
 from markdown import html_to_markdown
-from models import Article, IMAGE_DIMENSION_FAIL_OPEN
+from models import Article
 from adapters.base import PlatformAdapter
 
 logger = logging.getLogger(__name__)
@@ -23,8 +23,8 @@ class HimaCommunityAdapter(PlatformAdapter):
 
     API = "https://omp.uopes.cn/xcar/omp/xbs/cc/queryPostShareDetail"
 
-    def __init__(self, image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN):
-        self.image_fail_open = image_fail_open
+    def __init__(self):
+        pass
 
     def can_handle(self, url: str) -> bool:
         return "omp.uopes.cn" in url
@@ -64,7 +64,6 @@ class HimaCommunityAdapter(PlatformAdapter):
             markdown=markdown,
             images=images,
             base_url=url,
-            image_fail_open=self.image_fail_open,
         )
         markdown = self._append_video_summary(markdown, content_detail)
 

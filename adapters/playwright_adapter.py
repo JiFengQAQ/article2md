@@ -9,7 +9,7 @@ from typing import Any, Optional
 from adapters.base import PlatformAdapter
 from markdown import _is_captcha, best_title_from_html, is_quality_article
 from adapters.requests_adapter import build_article_from_html
-from models import Article, DEFAULT_RETRIES, DEFAULT_TIMEOUT, IMAGE_DIMENSION_FAIL_OPEN, USER_AGENT
+from models import Article, DEFAULT_RETRIES, DEFAULT_TIMEOUT, USER_AGENT
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +21,9 @@ class PlaywrightAdapter(PlatformAdapter):
         self,
         timeout: int = DEFAULT_TIMEOUT,
         retries: int = DEFAULT_RETRIES,
-        image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
     ):
         self.timeout = timeout
         self.retries = retries
-        self.image_fail_open = image_fail_open
 
     def can_handle(self, url: str) -> bool:
         return True
@@ -91,7 +89,6 @@ class PlaywrightAdapter(PlatformAdapter):
             html=html,
             final_url=final_url,
             source_url=url,
-            image_fail_open=self.image_fail_open,
         )
         if not article:
             return None

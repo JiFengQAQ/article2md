@@ -16,7 +16,7 @@ def _extract_with_payload(payload: dict, content_id: str = "1642222"):
 
     with patch("adapters.hima_community_adapter.requests.get", return_value=response) as mock_get:
         with patch("images._fetch_image_dimensions", side_effect=_fake_dimensions):
-            adapter = HimaCommunityAdapter(image_fail_open=False)
+            adapter = HimaCommunityAdapter()
             article = adapter.extract(
                 f"https://omp.uopes.cn/static/webapp/share/article_details.html?contentId={content_id}"
             )

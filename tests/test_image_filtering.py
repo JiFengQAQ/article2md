@@ -148,7 +148,7 @@ class ImageFilteringTests(unittest.TestCase):
             "https://example.com/keep-portrait.png",
         ])
 
-    def test_fail_open_keeps_unknown_dimension_images(self):
+    def test_unknown_dimension_images_are_filtered(self):
         images = ["https://example.com/unknown.png"]
         with patch.object(image_utils, "_fetch_image_dimensions", return_value=None):
             markdown = image_utils._strip_svg_and_non_content(
@@ -156,10 +156,9 @@ class ImageFilteringTests(unittest.TestCase):
                 images,
                 480,
                 5,
-                fail_open=True,
             )
-        self.assertIn("unknown.png", markdown)
-        self.assertEqual(images, ["https://example.com/unknown.png"])
+        self.assertNotIn("unknown.png", markdown)
+        self.assertEqual(images, [])
 
     def test_finalize_postprocess_normalizes_markdown_image_urls_to_absolute(self):
         images = ["https://example.com/assets/keep.jpg"]
@@ -168,7 +167,6 @@ class ImageFilteringTests(unittest.TestCase):
                 markdown="段落\n\n![](/assets/keep.jpg)",
                 images=images,
                 base_url="https://example.com/news/1",
-                image_fail_open=False,
             )
         self.assertIn("![](https://example.com/assets/keep.jpg)", markdown)
         self.assertNotIn("![](/assets/keep.jpg)", markdown)
@@ -185,7 +183,6 @@ class ImageFilteringTests(unittest.TestCase):
                 ),
                 images=images,
                 base_url="https://example.com/a",
-                image_fail_open=False,
             )
         self.assertNotIn("data:image", markdown)
         self.assertNotIn("blob:https://", markdown)
@@ -214,7 +211,6 @@ class ImageFilteringTests(unittest.TestCase):
                 ),
                 images=images,
                 base_url="https://example.com/article/1",
-                image_fail_open=False,
             )
         exported_unique = set(image_utils._markdown_image_urls(markdown))
         self.assertEqual(images, ["https://example.com/img/dup.jpg"])

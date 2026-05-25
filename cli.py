@@ -15,11 +15,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Extract an article URL to Markdown")
     parser.add_argument("url")
     parser.add_argument("--json", action="store_true", help="output structured JSON")
-    parser.add_argument(
-        "--image-fail-open",
-        action="store_true",
-        help="keep images whose dimensions cannot be fetched or parsed",
-    )
     return parser
 
 
@@ -27,7 +22,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     args = build_parser().parse_args(argv)
-    result = article_to_dict(args.url, image_fail_open=args.image_fail_open)
+    result = article_to_dict(args.url)
     if not result:
         print("ERROR: Extraction failed")
         return 1

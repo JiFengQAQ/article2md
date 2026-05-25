@@ -6,7 +6,7 @@ import logging
 from typing import Optional
 
 from adapters import HimaCommunityAdapter, PlatformAdapter, PlaywrightAdapter, RequestsAdapter
-from models import Article, DEFAULT_RETRIES, DEFAULT_TIMEOUT, IMAGE_DIMENSION_FAIL_OPEN
+from models import Article, DEFAULT_RETRIES, DEFAULT_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -18,15 +18,13 @@ class ArticleExtractor:
         self,
         timeout: int = DEFAULT_TIMEOUT,
         retries: int = DEFAULT_RETRIES,
-        image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
     ):
         self.timeout = timeout
         self.retries = retries
-        self.image_fail_open = image_fail_open
         self.adapters: list[PlatformAdapter] = [
-            HimaCommunityAdapter(image_fail_open=image_fail_open),
-            RequestsAdapter(timeout=timeout, image_fail_open=image_fail_open),
-            PlaywrightAdapter(timeout=timeout, retries=retries, image_fail_open=image_fail_open),
+            HimaCommunityAdapter(),
+            RequestsAdapter(timeout=timeout),
+            PlaywrightAdapter(timeout=timeout, retries=retries),
         ]
 
     def extract(self, url: str) -> Optional[Article]:
@@ -57,21 +55,19 @@ _extractor = ArticleExtractor()
 def _choose_extractor(
     timeout: int,
     retries: int,
-    image_fail_open: bool,
 ) -> ArticleExtractor:
-    if (timeout, retries, image_fail_open) == (DEFAULT_TIMEOUT, DEFAULT_RETRIES, IMAGE_DIMENSION_FAIL_OPEN):
+    if (timeout, retries) == (DEFAULT_TIMEOUT, DEFAULT_RETRIES):
         return _extractor
-    return ArticleExtractor(timeout=timeout, retries=retries, image_fail_open=image_fail_open)
+    return ArticleExtractor(timeout=timeout, retries=retries)
 
 
 def article_to_markdown(
     url: str,
     timeout: int = DEFAULT_TIMEOUT,
     retries: int = DEFAULT_RETRIES,
-    image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
 ) -> Optional[str]:
     """单行API: URL -> markdown"""
-    extractor = _choose_extractor(timeout=timeout, retries=retries, image_fail_open=image_fail_open)
+    extractor = _choose_extractor(timeout=timeout, retries=retries)
     article = extractor.extract(url)
     return article.markdown if article else None
 
@@ -80,10 +76,9 @@ def article_to_dict(
     url: str,
     timeout: int = DEFAULT_TIMEOUT,
     retries: int = DEFAULT_RETRIES,
-    image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN,
 ) -> Optional[dict]:
     """URL -> 结构化文章字典"""
-    extractor = _choose_extractor(timeout=timeout, retries=retries, image_fail_open=image_fail_open)
+    extractor = _choose_extractor(timeout=timeout, retries=retries)
     article = extractor.extract(url)
     if not article:
         return None

@@ -16,7 +16,7 @@ from adapters.content_candidates import (
 )
 from images import _extract_images_from_html, finalize_markdown_and_images, normalize_html_images
 from markdown import _is_captcha, best_title_from_html, html_to_markdown, is_quality_article
-from models import Article, DEFAULT_TIMEOUT, IMAGE_DIMENSION_FAIL_OPEN
+from models import Article, DEFAULT_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,6 @@ def build_article_from_html(
     html: str,
     final_url: str,
     source_url: str,
-    image_fail_open: bool,
     min_chars: int = 220,
 ) -> Optional[Article]:
     normalized_html = normalize_html_images(html, final_url)
@@ -66,7 +65,6 @@ def build_article_from_html(
         markdown=markdown,
         images=images,
         base_url=final_url,
-        image_fail_open=image_fail_open,
     )
 
     return Article(
@@ -80,9 +78,8 @@ def build_article_from_html(
 class RequestsAdapter(PlatformAdapter):
     """服务端渲染页面的快速通用兜底适配器"""
 
-    def __init__(self, timeout: int = DEFAULT_TIMEOUT, image_fail_open: bool = IMAGE_DIMENSION_FAIL_OPEN):
+    def __init__(self, timeout: int = DEFAULT_TIMEOUT):
         self.timeout = timeout
-        self.image_fail_open = image_fail_open
 
     def can_handle(self, url: str) -> bool:
         return True
@@ -108,7 +105,6 @@ class RequestsAdapter(PlatformAdapter):
             html=html,
             final_url=final_url,
             source_url=url,
-            image_fail_open=self.image_fail_open,
         )
         if article and is_quality_article(article, min_chars=100):
             return article

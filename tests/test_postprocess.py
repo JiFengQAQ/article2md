@@ -26,7 +26,6 @@ def test_finalize_markdown_and_images_shared_postprocess():
             markdown=markdown,
             images=images,
             base_url=base_url,
-            image_fail_open=False,
         )
 
     assert "同意并继续" in final_markdown
@@ -59,7 +58,6 @@ def test_finalize_markdown_and_images_counts_only_exported_markdown_images():
             markdown=markdown,
             images=images,
             base_url=base_url,
-            image_fail_open=False,
         )
 
     markdown_image_urls = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", final_markdown)
@@ -103,7 +101,6 @@ def test_finalize_markdown_and_images_calls_clean_markdown_once_after_image_filt
                 markdown=markdown,
                 images=images,
                 base_url=base_url,
-                image_fail_open=False,
                 min_side=480,
                 max_landscape_aspect=5,
             )

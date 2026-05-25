@@ -123,7 +123,6 @@ def test_finalize_markdown_and_images_syncs_to_exported_images():
             markdown=markdown,
             images=images,
             base_url="https://example.com/news/1",
-            image_fail_open=False,
             min_side=480,
             max_landscape_aspect=5,
         )

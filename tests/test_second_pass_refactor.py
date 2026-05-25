@@ -57,7 +57,6 @@ def test_refactored_image_pipeline_filters_and_syncs_in_one_pass():
             markdown=markdown,
             images=images,
             base_url="https://example.com/news/1",
-            image_fail_open=False,
         )
 
     assert final.count("![](") == 1
@@ -92,7 +91,6 @@ def test_candidate_extraction_still_merges_adjacent_body_blocks_after_stats_refa
         html=html,
         final_url="https://example.com/news/3",
         source_url="https://example.com/news/3",
-        image_fail_open=True,
         min_chars=120,
     )
     assert article is not None

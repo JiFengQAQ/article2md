@@ -235,7 +235,7 @@ def test_requests_adapter_uses_dom_candidate_main_path():
     response.text = SAMPLE_HTML
 
     with patch("adapters.requests_adapter.requests.get", return_value=response):
-        article = RequestsAdapter(timeout=3, image_fail_open=False).extract("https://example.com/news/1")
+        article = RequestsAdapter(timeout=3).extract("https://example.com/news/1")
 
     assert article is not None
     assert "进入大规模验证阶段" in article.markdown
@@ -271,7 +271,7 @@ def test_requests_adapter_normalizes_lazy_images_and_exports_absolute_markdown_u
 
     with patch("adapters.requests_adapter.requests.get", return_value=response):
         with patch("images._fetch_image_dimensions", return_value=(1280, 720)):
-            article = RequestsAdapter(timeout=3, image_fail_open=False).extract("https://example.com/news/100")
+            article = RequestsAdapter(timeout=3).extract("https://example.com/news/100")
 
     assert article is not None
     assert "(https://example.com/assets/cover.jpg)" in article.markdown
@@ -300,7 +300,6 @@ def test_build_article_from_html_preserves_standalone_image_blocks_in_candidate_
             html=html,
             final_url="https://example.com/news/200",
             source_url="https://example.com/news/200",
-            image_fail_open=False,
             min_chars=120,
         )
 
@@ -399,7 +398,7 @@ def _fake_sync_playwright():
 
 
 def test_playwright_adapter_reuses_dom_candidate_pipeline_with_rendered_html():
-    adapter = PlaywrightAdapter(timeout=3, retries=0, image_fail_open=False)
+    adapter = PlaywrightAdapter(timeout=3, retries=0)
     with patch("adapters.playwright_adapter.build_article_from_html", wraps=build_article_from_html) as patched_pipeline:
         article = adapter._extract_once(
             "https://example.com/news/1",
