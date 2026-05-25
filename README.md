@@ -34,13 +34,38 @@ playwright install chromium
 CLI：
 
 ```bash
-python extractor.py URL [--json] [--image-fail-open]
+python extractor.py URL [--json]
 ```
 
 Python API：
 
 ```python
-from extractor import article_to_markdown, article_to_dict, ArticleExtractor, Article
+from extractor import article_to_dict
+
+url = "https://www.example.com/article.html"
+
+article = article_to_dict(url)
+
+if article is None:
+    print("extract failed")
+else:
+    print(article["title"])
+    print(article["source_url"])
+    print(article["markdown"])
+    print(article["images"])
+```
+
+如果只要Markdown：
+
+```python
+from extractor import article_to_markdown
+
+md = article_to_markdown("https://www.example.com/article.html")
+
+if md:
+    print(md)
+else:
+    print("extract failed")
 ```
 
 ## 项目结构（单层根目录）
@@ -81,9 +106,6 @@ python extractor.py "https://omp.uopes.cn/static/webapp/share/article_details.ht
 
 # JSON输出
 python extractor.py "https://omp.uopes.cn/static/webapp/share/article_details.html?contentId=1642222" --json
-
-# 图片尺寸探测失败时保留图片（默认fail-closed）
-python extractor.py "https://example.com/article" --image-fail-open
 ```
 
 ## 图文后处理规则
@@ -98,8 +120,7 @@ python extractor.py "https://example.com/article" --image-fail-open
 图片过滤规则：
 `宽 ≥ 480或 高 ≥ 480，非方图；横向（宽>高）宽高比 ≤ 5，纵向无限制`。
 
-- 未知尺寸默认 `fail-closed`（删除）。
-- `image_fail_open=True` 或 `--image-fail-open` 时改为保留未知尺寸图片。
+- 未知尺寸图片固定 `fail-closed`（删除）。
 
 ## 能力与局限
 
