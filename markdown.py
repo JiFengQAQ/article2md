@@ -216,12 +216,11 @@ def _pattern_haystack(*parts: str) -> str:
 def _is_captcha(title: str = "", text: str = "", url: str = "") -> bool:
     haystack = _pattern_haystack(title, text, url)
     parsed = urlparse(url or "")
-    text_patterns = tuple(pattern for pattern in CAPTCHA_PATTERNS if pattern.lower() != "captcha")
     return (
         parsed.netloc.endswith("passport.baidu.com")
         or "captcha" in parsed.path.lower()
         or "captcha" in parsed.query.lower()
-        or any(pattern.lower() in haystack for pattern in text_patterns)
+        or any(pattern.lower() in haystack for pattern in CAPTCHA_PATTERNS)
     )
 
 

@@ -4,13 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from markdown import _is_captcha, clean_markdown, html_to_markdown
-
-
-def test_is_captcha_ignores_wikipedia_edit_captcha_config():
-    text = 'wgConfirmEditCaptchaNeededForGenericEdit":"hcaptcha"'
-
-    assert not _is_captcha(title="人工智能 - 维基百科", text=text, url="https://zh.wikipedia.org/wiki/人工智能")
+from markdown import clean_markdown, html_to_markdown
 
 
 def test_html_to_markdown_preserves_headings_paragraphs_link_text_and_images():
