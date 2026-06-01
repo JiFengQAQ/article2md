@@ -171,6 +171,18 @@ class ImageFilteringTests(unittest.TestCase):
         self.assertIn("![](https://example.com/assets/keep.jpg)", markdown)
         self.assertNotIn("![](/assets/keep.jpg)", markdown)
 
+    def test_finalize_postprocess_normalizes_markdown_image_without_title(self):
+        images = ["https://example.com/assets/keep.jpg"]
+        with patch.object(image_utils, "_fetch_image_dimensions", return_value=(1200, 800)):
+            markdown = image_utils.finalize_markdown_and_images(
+                markdown='正文第一段：这是保留内容并保证正文识别。\n\n![封面](/assets/keep.jpg "配图标题")',
+                images=images,
+                base_url="https://example.com/news/1",
+            )
+        self.assertIn("![封面](https://example.com/assets/keep.jpg)", markdown)
+        self.assertNotIn('"配图标题"', markdown)
+        self.assertNotIn("![封面](/assets/keep.jpg", markdown)
+
     def test_finalize_removes_invalid_data_blob_javascript_image_refs(self):
         images = ["https://example.com/ok.jpg"]
         with patch.object(image_utils, "_fetch_image_dimensions", return_value=(1200, 800)):

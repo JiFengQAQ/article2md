@@ -17,6 +17,8 @@ _HEADING_PREFIX_RE = re.compile(r"^#{1,6}\s*")
 _LIST_PREFIX_RE = re.compile(r"^(?:[*+-]|\d+\.)\s+")
 _MARKDOWN_IMAGE_INLINE_RE = re.compile(r"!\[([^\]]*)\]\([^)]+\)")
 _MARKDOWN_LINK_INLINE_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+_MARKDOWN_LINKED_IMAGE_INLINE_RE = re.compile(r"\[(\!\[[^\]]*\]\([^)]+\))\]\([^)]+\)")
+_MARKDOWN_PLAIN_LINK_INLINE_RE = re.compile(r"(?<!!)\[(?!\!)([^\]]*)\]\([^)]+\)")
 _MARKDOWN_FORMAT_RE = re.compile(r"[`*_~]+")
 _WHITESPACE_RE = re.compile(r"\s+")
 _BOUNDARY_COMPACT_RE = re.compile(r"[\s\-|｜:：·•]+")
@@ -73,8 +75,22 @@ _CHINESE_RE = re.compile(r"[\u3400-\u9fff]")
 _VISIBLE_TEXT_RE = re.compile(r"[\u3400-\u9fffA-Za-z0-9]")
 
 
+def _strip_markdown_links(line: str) -> str:
+    text = line or ""
+    if "](" not in text:
+        return text
+    for _ in range(3):
+        replaced = _MARKDOWN_LINKED_IMAGE_INLINE_RE.sub(r"\1", text)
+        replaced = _MARKDOWN_PLAIN_LINK_INLINE_RE.sub(r"\1", replaced)
+        if replaced == text:
+            break
+        text = replaced
+    return text
+
+
 def _normalize_markdown(markdown: str) -> str:
     text = (markdown or "").replace("\r\n", "\n")
+    text = "\n".join(_strip_markdown_links(line) for line in text.split("\n"))
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
@@ -165,15 +181,16 @@ def clean_markdown(markdown: str) -> str:
     previous_blank = False
     css_depth = 0
     for raw_line in markdown.replace("\r\n", "\n").split("\n"):
-        stripped = raw_line.strip()
+        line = _strip_markdown_links(raw_line)
+        stripped = line.strip()
         if css_depth > 0:
-            css_depth += raw_line.count("{") - raw_line.count("}")
+            css_depth += line.count("{") - line.count("}")
             css_depth = max(css_depth, 0)
             continue
         if _looks_like_css_inline(stripped):
             continue
         if _looks_like_css_block_start(stripped):
-            css_depth = max(1, raw_line.count("{") - raw_line.count("}"))
+            css_depth = max(1, line.count("{") - line.count("}"))
             continue
         if _EMPTY_HEADING_RE.match(stripped):
             continue
@@ -186,8 +203,8 @@ def clean_markdown(markdown: str) -> str:
                 lines.append("")
             previous_blank = True
             continue
-        lines.append(raw_line.rstrip())
-        body_started = body_started or _is_substantive_article_line(raw_line)
+        lines.append(line.rstrip())
+        body_started = body_started or _is_substantive_article_line(line)
         previous_blank = False
     return "\n".join(lines).strip()
 
@@ -199,11 +216,12 @@ def _pattern_haystack(*parts: str) -> str:
 def _is_captcha(title: str = "", text: str = "", url: str = "") -> bool:
     haystack = _pattern_haystack(title, text, url)
     parsed = urlparse(url or "")
+    text_patterns = tuple(pattern for pattern in CAPTCHA_PATTERNS if pattern.lower() != "captcha")
     return (
         parsed.netloc.endswith("passport.baidu.com")
         or "captcha" in parsed.path.lower()
         or "captcha" in parsed.query.lower()
-        or any(pattern.lower() in haystack for pattern in CAPTCHA_PATTERNS)
+        or any(pattern.lower() in haystack for pattern in text_patterns)
     )
 
 

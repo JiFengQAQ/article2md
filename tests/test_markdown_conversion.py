@@ -4,10 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from markdown import clean_markdown, html_to_markdown
+from markdown import _is_captcha, clean_markdown, html_to_markdown
 
 
-def test_html_to_markdown_preserves_headings_paragraphs_links_and_images():
+def test_is_captcha_ignores_wikipedia_edit_captcha_config():
+    text = 'wgConfirmEditCaptchaNeededForGenericEdit":"hcaptcha"'
+
+    assert not _is_captcha(title="人工智能 - 维基百科", text=text, url="https://zh.wikipedia.org/wiki/人工智能")
+
+
+def test_html_to_markdown_preserves_headings_paragraphs_link_text_and_images():
     html = """
     <article>
       <h1>Breaking News</h1>
@@ -24,7 +30,8 @@ def test_html_to_markdown_preserves_headings_paragraphs_links_and_images():
     assert re.search(r"(?m)^#\s+Breaking News\s*$", markdown)
     assert "First paragraph with a" in markdown
     assert "Second paragraph with context." in markdown
-    assert re.search(r"\[source\]\((?:<)?https://example\.com/source(?:>)?\)", markdown)
+    assert "source" in markdown
+    assert "[source](" not in markdown
     assert "![Chart](https://cdn.example.com/chart.png)" in markdown
 
 
@@ -151,6 +158,33 @@ def test_clean_markdown_normalizes_markdown_links_before_boundary_match():
     assert "这是正文第二段，包含更多信息。" in cleaned
     assert "相关推荐" not in cleaned
     assert "推荐区文案" not in cleaned
+
+
+def test_clean_markdown_strips_plain_markdown_links_but_keeps_images():
+    raw = """
+    # 正文标题
+    正文第一段：这段文字足够长并包含必要标点，用于确保正文识别已经开始。
+    参考资料见 [普通链接](https://example.com/a) 并结合图片 ![配图](https://img.example.com/story.jpg)
+    """
+
+    cleaned = clean_markdown(raw)
+
+    assert "普通链接" in cleaned
+    assert "[普通链接](" not in cleaned
+    assert "![配图](https://img.example.com/story.jpg)" in cleaned
+
+
+def test_clean_markdown_unwraps_linked_images():
+    raw = """
+    正文第一段：这段文字足够长并包含必要标点，用于确保正文识别已经开始。
+    [![配图](https://img.example.com/story.jpg)](https://example.com/detail)
+    """
+
+    cleaned = clean_markdown(raw)
+
+    assert "![配图](https://img.example.com/story.jpg)" in cleaned
+    assert "[![配图](" not in cleaned
+    assert "](https://example.com/detail)" not in cleaned
 
 
 def test_is_post_article_boundary_fast_path_skips_variants_for_normal_body_line(monkeypatch):

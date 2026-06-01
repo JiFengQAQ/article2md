@@ -151,12 +151,12 @@ def _rewrite_markdown_images(markdown: str, base_url: str = "", filtered_urls: s
     exported: list[str] = []
 
     def _replace(match: re.Match[str]) -> str:
-        alt_text, raw_url, title = match.group(1), _normalize_markdown_image_url(match.group(2)), match.group(3) or ""
+        alt_text, raw_url = match.group(1), _normalize_markdown_image_url(match.group(2))
         normalized = _normalize_markdown_image_url(raw_url, base_url=base_url)
         if not normalized or _is_svg_url(normalized) or raw_url in filtered_urls or normalized in filtered_urls:
             return ""
         exported.append(normalized)
-        return f"![{alt_text}]({normalized}{title})"
+        return f"![{alt_text}]({normalized})"
 
     return _MARKDOWN_IMAGE_RE.sub(_replace, markdown or ""), _dedupe(exported)
 
