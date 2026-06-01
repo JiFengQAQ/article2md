@@ -200,7 +200,7 @@ class HimaCommunityAdapter(PlatformAdapter):
         video_cover = (block.get("videoCoverUrl") or "").strip()
         parts: list[str] = []
         if video_url:
-            parts.append(f"> 视频: [{video_url}]({video_url})\n")
+            parts.append(f"> 视频: {video_url}\n")
         if video_cover:
             parts.append(f"![视频封面]({video_cover})\n")
         return parts

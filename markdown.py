@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 from urllib.parse import urlparse
-from markdownify import markdownify
+from markdownify import MarkdownConverter
 from models import Article, CAPTCHA_PATTERNS
 
 _EMPTY_HEADING_RE = re.compile(r"^#{1,6}\s*$")
@@ -17,8 +17,6 @@ _HEADING_PREFIX_RE = re.compile(r"^#{1,6}\s*")
 _LIST_PREFIX_RE = re.compile(r"^(?:[*+-]|\d+\.)\s+")
 _MARKDOWN_IMAGE_INLINE_RE = re.compile(r"!\[([^\]]*)\]\([^)]+\)")
 _MARKDOWN_LINK_INLINE_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
-_MARKDOWN_LINKED_IMAGE_INLINE_RE = re.compile(r"\[(\!\[[^\]]*\]\([^)]+\))\]\([^)]+\)")
-_MARKDOWN_PLAIN_LINK_INLINE_RE = re.compile(r"(?<!!)\[(?!\!)([^\]]*)\]\([^)]+\)")
 _MARKDOWN_FORMAT_RE = re.compile(r"[`*_~]+")
 _WHITESPACE_RE = re.compile(r"\s+")
 _BOUNDARY_COMPACT_RE = re.compile(r"[\s\-|｜:：·•]+")
@@ -75,29 +73,27 @@ _CHINESE_RE = re.compile(r"[\u3400-\u9fff]")
 _VISIBLE_TEXT_RE = re.compile(r"[\u3400-\u9fffA-Za-z0-9]")
 
 
-def _strip_markdown_links(line: str) -> str:
-    text = line or ""
-    if "](" not in text:
-        return text
-    for _ in range(3):
-        replaced = _MARKDOWN_LINKED_IMAGE_INLINE_RE.sub(r"\1", text)
-        replaced = _MARKDOWN_PLAIN_LINK_INLINE_RE.sub(r"\1", replaced)
-        if replaced == text:
-            break
-        text = replaced
-    return text
+class _ArticleMarkdownConverter(MarkdownConverter):
+    def convert_a(self, el, text, parent_tags):
+        return text or ""
+
+    def convert_img(self, el, text, parent_tags):
+        alt, src = el.attrs.get("alt", "") or "", el.attrs.get("src", "") or ""
+        if "_inline" in parent_tags and el.parent.name not in self.options["keep_inline_images_in"]:
+            return alt
+        return f"![{alt}]({src})"
 
 
 def _normalize_markdown(markdown: str) -> str:
     text = (markdown or "").replace("\r\n", "\n")
-    text = "\n".join(_strip_markdown_links(line) for line in text.split("\n"))
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 def html_to_markdown(html: str) -> str:
     if not html:
         return ""
-    return _normalize_markdown(markdownify(html, heading_style="ATX", bullets="*", strip=("script", "style")))
+    converter = _ArticleMarkdownConverter(heading_style="ATX", bullets="*", strip=("script", "style"))
+    return _normalize_markdown(converter.convert(html))
 
 
 def _line_text_for_matching(line: str) -> str:
@@ -181,16 +177,15 @@ def clean_markdown(markdown: str) -> str:
     previous_blank = False
     css_depth = 0
     for raw_line in markdown.replace("\r\n", "\n").split("\n"):
-        line = _strip_markdown_links(raw_line)
-        stripped = line.strip()
+        stripped = raw_line.strip()
         if css_depth > 0:
-            css_depth += line.count("{") - line.count("}")
+            css_depth += raw_line.count("{") - raw_line.count("}")
             css_depth = max(css_depth, 0)
             continue
         if _looks_like_css_inline(stripped):
             continue
         if _looks_like_css_block_start(stripped):
-            css_depth = max(1, line.count("{") - line.count("}"))
+            css_depth = max(1, raw_line.count("{") - raw_line.count("}"))
             continue
         if _EMPTY_HEADING_RE.match(stripped):
             continue
@@ -203,8 +198,8 @@ def clean_markdown(markdown: str) -> str:
                 lines.append("")
             previous_blank = True
             continue
-        lines.append(line.rstrip())
-        body_started = body_started or _is_substantive_article_line(line)
+        lines.append(raw_line.rstrip())
+        body_started = body_started or _is_substantive_article_line(raw_line)
         previous_blank = False
     return "\n".join(lines).strip()
 

@@ -62,6 +62,8 @@ def test_hima_community_adapter_parses_sample_payload():
     assert "第二段" in article.markdown
     assert "https://video.example.com/in-block.mp4" in article.markdown
     assert "https://video.example.com/final.mp4" in article.markdown
+    assert "[https://video.example.com/in-block.mp4](" not in article.markdown
+    assert "[https://video.example.com/final.mp4](" not in article.markdown
     assert "https://img.example.com/body.jpg" in article.images
     assert "https://img.example.com/cover.jpg" in article.images
     assert "https://img.example.com/fc.jpg" in article.images

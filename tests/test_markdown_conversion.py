@@ -154,31 +154,49 @@ def test_clean_markdown_normalizes_markdown_links_before_boundary_match():
     assert "推荐区文案" not in cleaned
 
 
-def test_clean_markdown_strips_plain_markdown_links_but_keeps_images():
-    raw = """
-    # 正文标题
-    正文第一段：这段文字足够长并包含必要标点，用于确保正文识别已经开始。
-    参考资料见 [普通链接](https://example.com/a) 并结合图片 ![配图](https://img.example.com/story.jpg)
+def test_html_to_markdown_strips_plain_anchor_links_but_keeps_text_and_images():
+    html = """
+    <article>
+      <p>参考资料见 <a href="https://example.com/a">普通链接</a> 并结合图片
+      <img src="https://img.example.com/story.jpg" alt="配图"></p>
+    </article>
     """
 
-    cleaned = clean_markdown(raw)
+    markdown = html_to_markdown(html)
 
-    assert "普通链接" in cleaned
-    assert "[普通链接](" not in cleaned
-    assert "![配图](https://img.example.com/story.jpg)" in cleaned
+    assert "普通链接" in markdown
+    assert "[普通链接](" not in markdown
+    assert "![配图](https://img.example.com/story.jpg)" in markdown
 
 
-def test_clean_markdown_unwraps_linked_images():
-    raw = """
-    正文第一段：这段文字足够长并包含必要标点，用于确保正文识别已经开始。
-    [![配图](https://img.example.com/story.jpg)](https://example.com/detail)
+def test_html_to_markdown_unwraps_linked_images_to_plain_image_markdown():
+    html = """
+    <article>
+      <a href="https://example.com/detail"><img src="https://img.example.com/story.jpg" alt="配图" title="图标题"></a>
+    </article>
     """
 
-    cleaned = clean_markdown(raw)
+    markdown = html_to_markdown(html)
 
-    assert "![配图](https://img.example.com/story.jpg)" in cleaned
-    assert "[![配图](" not in cleaned
-    assert "](https://example.com/detail)" not in cleaned
+    assert "![配图](https://img.example.com/story.jpg)" in markdown
+    assert "[![配图](" not in markdown
+    assert "](https://example.com/detail)" not in markdown
+    assert '"图标题"' not in markdown
+
+
+def test_html_to_markdown_wikipedia_redlink_keeps_only_anchor_text():
+    html = """
+    <p>
+      <a href="/w/index.php?title=%E5%8F%AA%E8%A7%81%E7%BA%BF&action=edit&redlink=1" title="只见线（页面不存在）">只见线</a>
+      是测试词条。
+    </p>
+    """
+
+    markdown = html_to_markdown(html)
+
+    assert "只见线" in markdown
+    assert "页面不存在" not in markdown
+    assert "](/w/index.php?" not in markdown
 
 
 def test_is_post_article_boundary_fast_path_skips_variants_for_normal_body_line(monkeypatch):
